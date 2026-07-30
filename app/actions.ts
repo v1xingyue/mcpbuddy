@@ -20,18 +20,18 @@ export async function provisionUser() {
 }
 
 export async function createWalletChallenge() {
-  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   const nonce = crypto.randomUUID(); const db = getDb(); const expiresAt = new Date(Date.now() + 5 * 60_000);
   await db.insert(walletChallenges).values({ userId: user.id, nonce, expiresAt });
-  return `MCPBuddy wallet binding\nGitHub account: ${user.githubId}\nNonce: ${nonce}\nExpires: ${expiresAt.toISOString()}`;
+  return `MCPBuddy wallet binding\nMCPBuddy account: ${user.githubId}\nNonce: ${nonce}\nExpires: ${expiresAt.toISOString()}`;
 }
 
 export async function bindWallet(address: string, message: string, signature: number[]) {
-  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) throw new Error('Invalid Solana address.');
   const nonce = message.match(/Nonce: ([\w-]+)/)?.[1]; if (!nonce) throw new Error('Invalid wallet challenge.');
   const db = getDb(); const [challenge] = await db.select().from(walletChallenges).where(and(eq(walletChallenges.userId, user.id), eq(walletChallenges.nonce, nonce), gt(walletChallenges.expiresAt, new Date()))).limit(1);
-  if (!challenge || !message.includes(`GitHub account: ${user.githubId}`)) throw new Error('Wallet challenge expired or invalid.');
+  if (!challenge || !message.includes(`MCPBuddy account: ${user.githubId}`)) throw new Error('Wallet challenge expired or invalid.');
   if (!nacl.sign.detached.verify(new TextEncoder().encode(message), new Uint8Array(signature), bs58.decode(address))) throw new Error('Wallet signature verification failed.');
   await db.delete(walletChallenges).where(eq(walletChallenges.id, challenge.id));
   await db.insert(walletBindings).values({ userId: user.id, address }).onConflictDoUpdate({ target: walletBindings.userId, set: { address, verifiedAt: new Date() } });
@@ -39,7 +39,7 @@ export async function bindWallet(address: string, message: string, signature: nu
 }
 
 export async function deletePublishedPage(pageId: string) {
-  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   const db = getDb(); const [page] = await db.select().from(publishedPages).where(and(eq(publishedPages.id, pageId), eq(publishedPages.userId, user.id))).limit(1);
   if (!page) throw new Error('Page not found.');
   if (page.blobUrl && env.BLOB_READ_WRITE_TOKEN) await del(page.blobUrl, { token: env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined);

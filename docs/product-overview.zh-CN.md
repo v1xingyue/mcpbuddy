@@ -2,7 +2,7 @@
 
 ## 产品简介
 
-MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。用户通过 GitHub 登录后获得自己的受 OAuth 保护的 MCP 服务入口，并可在 Claude、ChatGPT（OpenAI）和 Grok 中连接该入口，安全地调用个人数据与工具。
+MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。用户通过 GitHub 或 Google 登录后获得自己的受 OAuth 保护的 MCP 服务入口，并可在 Claude、ChatGPT（OpenAI）和 Grok 中连接该入口，安全地调用个人数据与工具。
 
 产品的核心目标是：让用户只需维护一个 MCP 中心，就能在多个 AI 平台之间复用身份、工具和内容，而不必为每个平台分别搭建后端服务。
 
@@ -18,7 +18,7 @@ MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。�
 
 ### 统一账号与连接
 
-- 使用 GitHub 登录，账号数据按用户隔离。
+- 使用 GitHub 或 Google 登录，账号数据按用户隔离。
 - 提供一个统一 MCP endpoint：`https://mcpbuddy.creatorsand.fun/api/mcp`。
 - 支持 Claude、ChatGPT/OpenAI 与 Grok 作为连接平台。
 - 使用 OAuth 2.1 / PKCE 与动态客户端注册完成兼容平台的授权连接。
@@ -46,12 +46,12 @@ MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。�
 
 - 支持通过 Solana 钱包签名挑战绑定地址。
 - 钱包地址是账户属性，供 MCP 工具按当前授权用户读取。
-- 钱包绑定不会替代 GitHub 登录，也不承担账户恢复或支付功能。
+- 钱包绑定不会替代 MCPBuddy 登录，也不承担账户恢复或支付功能。
 
 ## 产品流程
 
 ```text
-GitHub 登录 → 进入 Dashboard → 复制 MCP Endpoint
+GitHub / Google 登录 → 进入 Dashboard → 复制 MCP Endpoint
                               ↓
                  在 Claude / ChatGPT / Grok 添加连接器
                               ↓
@@ -65,7 +65,7 @@ GitHub 登录 → 进入 Dashboard → 复制 MCP Endpoint
 MCPBuddy 作为 Vercel 应用运行，采用适合无服务器部署的组件组合：
 
 - Next.js：Dashboard、认证回调、OAuth 端点与 MCP Streamable HTTP 服务。
-- GitHub OAuth：用户登录与账户识别。
+- GitHub OAuth / Google OAuth：用户登录与账户识别。
 - Vercel Postgres：用户、OAuth 授权记录、平台连接状态和页面元数据。
 - Vercel Blob：公开页面内容等可分享的对象存储。
 - MCP TypeScript SDK：标准 MCP 协议处理与工具注册。

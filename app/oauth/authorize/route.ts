@@ -11,7 +11,8 @@ export async function GET(request: Request) {
   const method = url.searchParams.get('code_challenge_method');
   const state = url.searchParams.get('state');
   const requestedScope = (url.searchParams.get('scope') ?? 'mcp:tools').split(' ');
-  if (!session?.user?.id) return Response.redirect(new URL(`/api/auth/signin/github?callbackUrl=${encodeURIComponent(url.toString())}`, url.origin));
+  // Use the provider picker so GitHub and Google accounts can complete MCP OAuth.
+  if (!session?.user?.id) return Response.redirect(new URL(`/api/auth/signin?callbackUrl=${encodeURIComponent(url.toString())}`, url.origin));
   if (!clientId || !redirectUri || !challenge || method !== 'S256' || !state || requestedScope.some(s => !supportedScopes.includes(s))) return Response.json({ error: 'invalid_request' }, { status: 400 });
   try { validateClient(clientId, redirectUri); } catch { return Response.json({ error: 'invalid_client' }, { status: 400 }); }
   const origin = publicOrigin(request);
