@@ -1,0 +1,35 @@
+'use server';
+
+import { auth } from '@/auth';
+import { getDb } from '@/lib/db';
+import { users, walletBindings } from '@/lib/db/schema';
+import { walletChallenges } from '@/lib/db/schema';
+import { eq, and, gt } from 'drizzle-orm';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
+
+export async function provisionUser() {
+  const session = await auth(); if (!session?.user?.id || !session.user.email) return null;
+  const db = getDb();
+  const [user] = await db.insert(users).values({ githubId: session.user.id, email: session.user.email, name: session.user.name, image: session.user.image }).onConflictDoUpdate({ target: users.githubId, set: { email: session.user.email, name: session.user.name, image: session.user.image } }).returning();
+  return user;
+}
+
+export async function createWalletChallenge() {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  const nonce = crypto.randomUUID(); const db = getDb(); const expiresAt = new Date(Date.now() + 5 * 60_000);
+  await db.insert(walletChallenges).values({ userId: user.id, nonce, expiresAt });
+  return `MCPBuddy wallet binding\nGitHub account: ${user.githubId}\nNonce: ${nonce}\nExpires: ${expiresAt.toISOString()}`;
+}
+
+export async function bindWallet(address: string, message: string, signature: number[]) {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  if (!/^[1-9A-HJ-NP-Za-km-z]{32,44}$/.test(address)) throw new Error('Invalid Solana address.');
+  const nonce = message.match(/Nonce: ([\w-]+)/)?.[1]; if (!nonce) throw new Error('Invalid wallet challenge.');
+  const db = getDb(); const [challenge] = await db.select().from(walletChallenges).where(and(eq(walletChallenges.userId, user.id), eq(walletChallenges.nonce, nonce), gt(walletChallenges.expiresAt, new Date()))).limit(1);
+  if (!challenge || !message.includes(`GitHub account: ${user.githubId}`)) throw new Error('Wallet challenge expired or invalid.');
+  if (!nacl.sign.detached.verify(new TextEncoder().encode(message), new Uint8Array(signature), bs58.decode(address))) throw new Error('Wallet signature verification failed.');
+  await db.delete(walletChallenges).where(eq(walletChallenges.id, challenge.id));
+  await db.insert(walletBindings).values({ userId: user.id, address }).onConflictDoUpdate({ target: walletBindings.userId, set: { address, verifiedAt: new Date() } });
+  return address;
+}
