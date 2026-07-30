@@ -77,6 +77,7 @@ export async function bindWallet(address: string, message: string, signature: nu
   if (!nacl.sign.detached.verify(new TextEncoder().encode(message), new Uint8Array(signature), bs58.decode(address))) throw new Error('Wallet signature verification failed.');
   await db.delete(walletChallenges).where(eq(walletChallenges.id, challenge.id));
   await db.insert(walletBindings).values({ userId: user.id, address }).onConflictDoUpdate({ target: walletBindings.userId, set: { address, verifiedAt: new Date() } });
+  await db.insert(authIdentities).values({ userId: user.id, provider: 'wallet', providerAccountId: address }).onConflictDoNothing();
   return address;
 }
 

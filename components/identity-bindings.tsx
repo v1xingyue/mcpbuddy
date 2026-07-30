@@ -1,0 +1,4 @@
+export function IdentityBindings({ providers }: { providers: string[] }) {
+  const bound = new Set(providers);
+  return <section className="identity-bindings"><div><p className="eyebrow">SIGN-IN METHODS</p><h2>Bound identities</h2><p>Any bound method can sign in to this MCPBuddy account.</p></div><div className="binding-actions"><a className={bound.has('github') ? 'bound' : ''} href={bound.has('github') ? undefined : '/api/account/link/github'}>{bound.has('github') ? 'GitHub bound' : 'Bind GitHub'}</a><a className={bound.has('google') ? 'bound' : ''} href={bound.has('google') ? undefined : '/api/account/link/google'}>{bound.has('google') ? 'Google bound' : 'Bind Google'}</a><span className={bound.has('wallet') ? 'bound' : ''}>{bound.has('wallet') ? 'Solana wallet bound' : 'Bind Solana wallet above'}</span></div></section>;
+}
