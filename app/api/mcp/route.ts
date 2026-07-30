@@ -2,6 +2,7 @@ import { createMcpHandler, withMcpAuth } from 'mcp-handler';
 import { z } from 'zod';
 import { and, eq } from 'drizzle-orm';
 import { put } from '@vercel/blob';
+import { randomUUID } from 'crypto';
 import { verifyMcpToken } from '@/lib/mcp-auth';
 import { getDb } from '@/lib/db';
 import { platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
@@ -40,12 +41,16 @@ const handler = createMcpHandler(
     server.tool(
       'publish_page',
       'Publish an account-owned Markdown page and return its storage URL.',
-      { slug: z.string().regex(/^[a-z0-9-]{1,80}$/), title: z.string().min(1).max(140), content: z.string().min(1).max(100_000) },
-      async ({ slug, title, content }, extra) => {
+      { slug: z.string().regex(/^[a-z0-9-]{1,80}$/), title: z.string().min(1).max(140), content: z.string().min(1).max(100_000), public: z.boolean().default(false).describe('Whether anyone with the returned URL can view the page.') },
+      async ({ slug, title, content, public: isPublic }, extra) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
-        const blob = env.BLOB_READ_WRITE_TOKEN ? await put(`pages/${user.id}/${slug}.md`, content, { access: 'public', addRandomSuffix: false, contentType: 'text/markdown; charset=utf-8', token: env.BLOB_READ_WRITE_TOKEN }) : null;
-        await getDb().insert(publishedPages).values({ userId: user.id, slug, title, content, blobUrl: blob?.url });
-        return { content: [{ type: 'text', text: `Published ${slug}${blob ? ` to ${blob.url}` : ''}` }] };
+        // Private pages stay solely in Postgres; never write their content to a public Blob URL.
+        const blob = isPublic && env.BLOB_READ_WRITE_TOKEN ? await put(`pages/${user.id}/${slug}.md`, content, { access: 'public', addRandomSuffix: false, contentType: 'text/markdown; charset=utf-8', token: env.BLOB_READ_WRITE_TOKEN }) : null;
+        const publicId = isPublic ? randomUUID() : null;
+        const [page] = await getDb().insert(publishedPages).values({ userId: user.id, slug, title, content, blobUrl: blob?.url, isPublic, publicId }).returning({ id: publishedPages.id, publicId: publishedPages.publicId });
+        const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000';
+        const pageUrl = isPublic ? `${origin}/p/${page.publicId}` : `${origin}/pages/${page.id}`;
+        return { content: [{ type: 'text', text: isPublic ? `Published public page: ${pageUrl}` : `Published private page. Open it from your MCPBuddy dashboard: ${pageUrl}` }] };
       },
     );
     server.tool(
@@ -54,7 +59,7 @@ const handler = createMcpHandler(
       {},
       async (_args, extra) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
-        const pages = await getDb().select({ slug: publishedPages.slug, title: publishedPages.title, updatedAt: publishedPages.updatedAt }).from(publishedPages).where(eq(publishedPages.userId, user.id));
+        const pages = await getDb().select({ id: publishedPages.id, slug: publishedPages.slug, title: publishedPages.title, isPublic: publishedPages.isPublic, publicId: publishedPages.publicId, updatedAt: publishedPages.updatedAt }).from(publishedPages).where(eq(publishedPages.userId, user.id));
         return { content: [{ type: 'text', text: JSON.stringify(pages) }] };
       },
     );

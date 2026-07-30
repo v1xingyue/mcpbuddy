@@ -48,6 +48,8 @@ export const publishedPages = pgTable('published_pages', {
   title: text('title').notNull(),
   content: text('content').notNull(),
   blobUrl: text('blob_url'),
+  isPublic: boolean('is_public').default(false).notNull(),
+  publicId: text('public_id').unique(),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
