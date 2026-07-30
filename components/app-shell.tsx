@@ -1,11 +1,12 @@
 import { signOut } from '@/auth';
-import { Cable, Database, Wrench } from 'lucide-react';
+import { Cable, Database, Settings2, Wrench } from 'lucide-react';
 
-type Area = 'connections' | 'tools' | 'pages';
+type Area = 'connections' | 'tools' | 'pages' | 'account';
 const items = [
   { id: 'connections' as const, href: '/', label: 'Connections', Icon: Cable },
   { id: 'tools' as const, href: '/tools', label: 'Tool list', Icon: Wrench },
   { id: 'pages' as const, href: '/pages', label: 'Data · Pages', Icon: Database },
+  { id: 'account' as const, href: '/account', label: 'Account', Icon: Settings2 },
 ];
 
 export function AppShell({ active, name, children }: { active: Area; name?: string | null; children: React.ReactNode }) {
