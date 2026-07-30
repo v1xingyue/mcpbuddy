@@ -1,6 +1,7 @@
 -- Run this migration in Vercel Postgres before enabling Google sign-in in production.
 -- Existing GitHub accounts are preserved and adopted into the new provider identity table.
 ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_unique;
+ALTER TABLE users DROP CONSTRAINT IF EXISTS users_email_key;
 
 CREATE TABLE IF NOT EXISTS auth_identities (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
