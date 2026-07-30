@@ -19,7 +19,14 @@ function unauthorized(request: Request) { const origin = publicOrigin(request); 
 export async function GET(request: Request) { return (await identity(request)) ? Response.json({ name: 'MCPBuddy', transport: 'streamable-http', tools }) : unauthorized(request); }
 export async function POST(request: Request) {
   const token = await identity(request).catch(() => null); if (!token) return unauthorized(request);
-  const body = await request.json().catch(() => null); if (body?.method === 'tools/list') return Response.json({ jsonrpc: '2.0', id: body.id, result: { tools } });
+  const body = await request.json().catch(() => null);
+  if (body?.method === 'initialize') {
+    const version = typeof body.params?.protocolVersion === 'string' ? body.params.protocolVersion : '2025-03-26';
+    return Response.json({ jsonrpc: '2.0', id: body.id, result: { protocolVersion: version, capabilities: { tools: {} }, serverInfo: { name: 'MCPBuddy', version: '0.1.0' }, instructions: 'Use hello to verify the connection, get_wallet_address for the verified Solana wallet, and publish_page to create account-owned content.' } }, { headers: { 'MCP-Protocol-Version': version } });
+  }
+  // MCP notifications have no JSON-RPC id and deliberately receive no body.
+  if (body?.method === 'notifications/initialized') return new Response(null, { status: 202 });
+  if (body?.method === 'tools/list') return Response.json({ jsonrpc: '2.0', id: body.id, result: { tools } }, { headers: { 'MCP-Protocol-Version': '2025-03-26' } });
   if (body?.method !== 'tools/call') return Response.json({ jsonrpc: '2.0', id: body?.id, error: { code: -32601, message: 'Method not found' } });
   try {
     const db = getDb(); const [user] = await db.select().from(users).where(eq(users.githubId, token.sub)).limit(1);
