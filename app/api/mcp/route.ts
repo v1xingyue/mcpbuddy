@@ -55,6 +55,15 @@ const handler = createMcpHandler(
       },
     );
     server.tool(
+      'user_info',
+      'Read the current user’s private userinfo.md before starting work. It contains their profile, preferences, constraints, and goals.',
+      {},
+      async (_args, extra) => {
+        const user = await currentUser(extra.authInfo?.extra?.githubId);
+        return { content: [{ type: 'text', text: user.userInfo || 'userinfo.md is empty. Ask the user to add their preferences in MCPBuddy Account settings.' }] };
+      },
+    );
+    server.tool(
       'publish_page',
       'Publish an account-owned Markdown page and return its storage URL.',
       { slug: z.string().regex(/^[a-z0-9-]{1,80}$/), title: z.string().min(1).max(140), content: z.string().min(1).max(100_000), public: z.boolean().default(false).describe('Whether anyone with the returned URL can view the page.') },

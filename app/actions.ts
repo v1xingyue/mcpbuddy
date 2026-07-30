@@ -75,6 +75,14 @@ export async function mergeDuplicateAccount(duplicateUserId: string) {
   revalidatePath('/'); revalidatePath('/pages'); revalidatePath('/tools');
 }
 
+/** Saves the private Markdown context returned by the MCP user_info tool. */
+export async function updateUserInfo(content: string) {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
+  if (typeof content !== 'string' || content.length > 20_000) throw new Error('User info must be Markdown under 20,000 characters.');
+  await getDb().update(users).set({ userInfo: content.trim() }).where(eq(users.id, user.id));
+  revalidatePath('/account');
+}
+
 export async function createWalletChallenge() {
   const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   const nonce = crypto.randomUUID(); const db = getDb(); const expiresAt = new Date(Date.now() + 5 * 60_000);
