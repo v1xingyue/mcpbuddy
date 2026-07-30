@@ -3,7 +3,8 @@ import { pgTable, text, timestamp, uuid, boolean } from 'drizzle-orm/pg-core';
 export const users = pgTable('users', {
   id: uuid('id').defaultRandom().primaryKey(),
   githubId: text('github_id').notNull().unique(),
-  email: text('email').notNull().unique(),
+  // Email is a discovery key for an explicit merge prompt, not an implicit account key.
+  email: text('email').notNull(),
   name: text('name'),
   image: text('image'),
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),

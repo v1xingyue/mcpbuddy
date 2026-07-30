@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { authIdentities, users, walletBindings } from '@/lib/db/schema';
+import { authIdentities, mcpConnections, platformConnections, users, walletBindings } from '@/lib/db/schema';
 import { publishedPages } from '@/lib/db/schema';
 import { walletChallenges } from '@/lib/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
@@ -34,6 +34,31 @@ export async function provisionUser() {
   const [user] = await db.insert(users).values({ githubId: session.user.id, email: session.user.email, name: session.user.name, image: session.user.image }).returning();
   await db.insert(authIdentities).values({ userId: user.id, provider, providerAccountId });
   return user;
+}
+
+/** Merge only accounts carrying the exact same OAuth email after the signed-in user confirms it. */
+export async function mergeDuplicateAccount(duplicateUserId: string) {
+  const primary = await provisionUser();
+  if (!primary) throw new Error('Sign in to MCPBuddy first.');
+  if (duplicateUserId === primary.id) throw new Error('This is already your active account.');
+  const db = getDb();
+  const [duplicate] = await db.select().from(users).where(eq(users.id, duplicateUserId)).limit(1);
+  if (!duplicate || duplicate.email.toLowerCase() !== primary.email.toLowerCase()) throw new Error('This account cannot be merged.');
+  const [primaryWallet] = await db.select().from(walletBindings).where(eq(walletBindings.userId, primary.id)).limit(1);
+  const [duplicateWallet] = await db.select().from(walletBindings).where(eq(walletBindings.userId, duplicate.id)).limit(1);
+  if (primaryWallet && duplicateWallet && primaryWallet.address !== duplicateWallet.address) throw new Error('Both accounts have different Solana wallets. Unbind one wallet before merging.');
+  await db.transaction(async (tx) => {
+    const primaryPlatforms = await tx.select({ platform: platformConnections.platform }).from(platformConnections).where(eq(platformConnections.userId, primary.id));
+    for (const { platform } of primaryPlatforms) await tx.delete(platformConnections).where(and(eq(platformConnections.userId, duplicate.id), eq(platformConnections.platform, platform)));
+    await tx.update(platformConnections).set({ userId: primary.id }).where(eq(platformConnections.userId, duplicate.id));
+    await tx.update(mcpConnections).set({ userId: primary.id }).where(eq(mcpConnections.userId, duplicate.id));
+    await tx.update(publishedPages).set({ userId: primary.id }).where(eq(publishedPages.userId, duplicate.id));
+    await tx.update(walletChallenges).set({ userId: primary.id }).where(eq(walletChallenges.userId, duplicate.id));
+    if (!primaryWallet && duplicateWallet) await tx.update(walletBindings).set({ userId: primary.id }).where(eq(walletBindings.userId, duplicate.id));
+    await tx.update(authIdentities).set({ userId: primary.id }).where(eq(authIdentities.userId, duplicate.id));
+    await tx.delete(users).where(eq(users.id, duplicate.id));
+  });
+  revalidatePath('/'); revalidatePath('/pages'); revalidatePath('/tools');
 }
 
 export async function createWalletChallenge() {
