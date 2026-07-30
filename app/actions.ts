@@ -1,6 +1,7 @@
 'use server';
 
 import { auth } from '@/auth';
+import type { Session } from 'next-auth';
 import { getDb } from '@/lib/db';
 import { authIdentities, mcpConnections, platformConnections, users, walletBindings } from '@/lib/db/schema';
 import { publishedPages } from '@/lib/db/schema';
@@ -12,8 +13,8 @@ import { del } from '@vercel/blob';
 import { env } from '@/lib/config';
 import { revalidatePath } from 'next/cache';
 
-export async function provisionUser() {
-  const session = await auth(); if (!session?.user?.id || !session.user.email) return null;
+export async function provisionUserForSession(session: Session | null) {
+  if (!session?.user?.id || !session.user.email) return null;
   const db = getDb();
   const separator = session.user.id.indexOf(':');
   const provider = separator > 0 ? session.user.id.slice(0, separator) : 'github';
@@ -46,6 +47,8 @@ export async function provisionUser() {
   await db.insert(authIdentities).values({ userId: user.id, provider, providerAccountId });
   return user;
 }
+
+export async function provisionUser() { return provisionUserForSession(await auth()); }
 
 /** Merge only accounts carrying the exact same OAuth email after the signed-in user confirms it. */
 export async function mergeDuplicateAccount(duplicateUserId: string) {
