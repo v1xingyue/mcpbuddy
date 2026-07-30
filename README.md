@@ -2,6 +2,8 @@
 
 An account-scoped MCP connection hub for Claude, OpenAI and Grok, designed for Vercel.
 
+中文产品介绍与规划请见 [docs/product-overview.zh-CN.md](docs/product-overview.zh-CN.md)。
+
 ## Product model
 
 1. Sign in with GitHub.
