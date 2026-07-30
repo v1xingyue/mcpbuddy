@@ -3,9 +3,9 @@
 import { useEffect, useState } from 'react';
 
 const platforms = [
-  { id: 'claude', number: '01', name: 'Claude', description: 'Add your endpoint in Claude’s Custom Connectors. Sign in with GitHub when prompted.', href: 'https://claude.ai' },
-  { id: 'openai', number: '02', name: 'ChatGPT', description: 'Use the same OAuth-protected endpoint in ChatGPT developer mode or your GPT Actions setup.', href: 'https://chatgpt.com' },
-  { id: 'grok', number: '03', name: 'Grok', description: 'Paste the endpoint in Custom Connectors. Grok discovers registration and completes PKCE automatically.', href: 'https://grok.com/connectors' },
+  { id: 'claude', number: '01', name: 'Claude', description: 'Add your endpoint in Claude’s Custom Connectors. Sign in with GitHub when prompted.', href: 'https://claude.ai', chatHref: 'https://claude.ai/new' },
+  { id: 'openai', number: '02', name: 'ChatGPT', description: 'Use the same OAuth-protected endpoint in ChatGPT developer mode or your GPT Actions setup.', href: 'https://chatgpt.com', chatHref: 'https://chatgpt.com/' },
+  { id: 'grok', number: '03', name: 'Grok', description: 'Paste the endpoint in Custom Connectors. Grok discovers registration and completes PKCE automatically.', href: 'https://grok.com/connectors', chatHref: 'https://grok.com/' },
 ];
 
 export function PlatformConnections({ connectedPlatforms }: { connectedPlatforms: string[] }) {
@@ -18,7 +18,9 @@ export function PlatformConnections({ connectedPlatforms }: { connectedPlatforms
   function sayHi(platform: (typeof platforms)[number]) {
     const nextPrompt = `Use the MCPBuddy hello tool now with {"platform":"${platform.id}"} to confirm this connection.`;
     // Opening must happen synchronously in the click handler or browsers treat it as a popup.
-    window.open(platform.href, '_blank', 'noopener,noreferrer');
+    const chatUrl = new URL(platform.chatHref);
+    chatUrl.searchParams.set('q', nextPrompt);
+    window.open(chatUrl.toString(), '_blank', 'noopener,noreferrer');
     setPrompt(nextPrompt);
     navigator.clipboard?.writeText(nextPrompt).catch(() => undefined);
   }
