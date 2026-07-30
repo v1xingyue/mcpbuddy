@@ -14,5 +14,5 @@ export default async function PrivatePage({ params }: { params: Promise<{ id: st
   if (!user) notFound();
   const [page] = await db.select().from(publishedPages).where(and(eq(publishedPages.id, id), eq(publishedPages.userId, user.id))).limit(1);
   if (!page) notFound();
-  return <PageContent title={page.title} content={page.content} visibility={page.isPublic ? 'Public' : 'Private'} />;
+  return <PageContent title={page.title} content={page.content} visibility={page.isPublic ? 'Public' : 'Private'} backHref="/pages" backLabel="All pages" />;
 }

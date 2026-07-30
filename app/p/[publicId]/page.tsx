@@ -8,5 +8,5 @@ export default async function PublicPage({ params }: { params: Promise<{ publicI
   const { publicId } = await params;
   const [page] = await getDb().select().from(publishedPages).where(and(eq(publishedPages.publicId, publicId), eq(publishedPages.isPublic, true))).limit(1);
   if (!page) notFound();
-  return <PageContent title={page.title} content={page.content} visibility="Public" />;
+  return <PageContent title={page.title} content={page.content} visibility="Public" backHref="/" backLabel="MCPBuddy" />;
 }

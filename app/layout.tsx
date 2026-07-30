@@ -1,5 +1,9 @@
 import type { Metadata } from 'next';
 import './globals.css';
 
-export const metadata: Metadata = { title: 'MCPBuddy — your AI connection center', description: 'One private MCP center for Claude, OpenAI and Grok.' };
+export const metadata: Metadata = {
+  title: 'MCPBuddy — your AI connection center',
+  description: 'One private MCP center for Claude, OpenAI and Grok.',
+  icons: { icon: '/icon.svg', shortcut: '/icon.svg', apple: '/icon.svg' }
+};
 export default function Layout({ children }: Readonly<{ children: React.ReactNode }>) { return <html lang="en"><body>{children}</body></html>; }
