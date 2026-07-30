@@ -15,5 +15,5 @@ export default async function Home() {
   const db = user ? getDb() : null;
   const connectedPlatforms = user && db ? (await db.select({ platform: platformConnections.platform }).from(platformConnections).where(eq(platformConnections.userId, user.id))).map(connection => connection.platform) : [];
   const endpoint = `${process.env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'}/api/mcp`;
-  return <AppShell active="connections" name={session.user.name}><header className="app-page-head"><p className="eyebrow">CONNECTION CENTER</p><h1>Connections</h1><p>Connect and verify the AI clients that can access your private MCP workspace.</p></header><EndpointCard endpoint={endpoint} /><PlatformConnections connectedPlatforms={connectedPlatforms} /></AppShell>;
+  return <AppShell active="connections" name={user?.name ?? user?.email}><header className="app-page-head"><p className="eyebrow">CONNECTION CENTER</p><h1>Connections</h1><p>Connect and verify the AI clients that can access your private MCP workspace.</p></header><EndpointCard endpoint={endpoint} /><PlatformConnections connectedPlatforms={connectedPlatforms} /></AppShell>;
 }
