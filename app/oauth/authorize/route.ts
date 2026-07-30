@@ -1,5 +1,5 @@
 import { auth } from '@/auth';
-import { issueToken, supportedScopes } from '@/lib/oauth';
+import { issueToken, supportedScopes, validateClient } from '@/lib/oauth';
 import { publicOrigin } from '@/lib/config';
 
 export async function GET(request: Request) {
@@ -13,8 +13,7 @@ export async function GET(request: Request) {
   const requestedScope = (url.searchParams.get('scope') ?? 'mcp:tools').split(' ');
   if (!session?.user?.id) return Response.redirect(new URL(`/api/auth/signin/github?callbackUrl=${encodeURIComponent(url.toString())}`, url.origin));
   if (!clientId || !redirectUri || !challenge || method !== 'S256' || !state || requestedScope.some(s => !supportedScopes.includes(s))) return Response.json({ error: 'invalid_request' }, { status: 400 });
-  // Grok must use its fixed DCR redirect. Claude/OpenAI may use their registered connector callback.
-  if (clientId === 'grok' && redirectUri !== 'https://grok.com/connectors-oauth-exchange-code/') return Response.json({ error: 'invalid_request' }, { status: 400 });
+  try { validateClient(clientId, redirectUri); } catch { return Response.json({ error: 'invalid_client' }, { status: 400 }); }
   const origin = publicOrigin(request);
   const code = await issueToken(origin, { typ: 'code', sub: session.user.id, client_id: clientId, redirect_uri: redirectUri, code_challenge: challenge, scope: requestedScope.join(' ') }, '5m');
   const callback = new URL(redirectUri);
