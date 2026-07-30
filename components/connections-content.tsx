@@ -4,7 +4,15 @@ import { useEffect, useState } from 'react';
 import { EndpointCard } from '@/components/endpoint-card';
 import { PlatformConnections } from '@/components/platform-connections';
 
-function ConnectionSkeleton() { return <div className="connection-skeleton" aria-busy="true">{[1, 2, 3].map(card => <div key={card}><i /><b /><span /><span /><em /></div>)}</div>; }
+const pendingPlatforms = [
+  { number: '01', name: 'Claude' },
+  { number: '02', name: 'ChatGPT' },
+  { number: '03', name: 'Grok' },
+];
+
+function ConnectionSkeleton() {
+  return <section className="connection-pending" aria-busy="true" aria-live="polite"><div className="sync-note"><i /><div><b>Syncing your connections</b><small>Your MCP workspace is ready. Checking linked AI clients…</small></div></div><div className="connection-skeleton">{pendingPlatforms.map(platform => <article key={platform.name}><div className="card-top"><span className="number">{platform.number}</span><span className="pending-status"><i />Checking</span></div><h2>Connect {platform.name}</h2><p>Loading connection status and setup details.</p><span className="pending-action">Preparing controls</span></article>)}</div></section>;
+}
 
 export function ConnectionsContent({ endpoint }: { endpoint: string }) {
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[] | null>(null);
