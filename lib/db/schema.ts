@@ -9,6 +9,18 @@ export const users = pgTable('users', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
 });
 
+// A user may authenticate through more than one OAuth provider. Keep provider credentials
+// separate from the user record so MCP ownership remains stable across sign-in methods.
+export const authIdentities = pgTable('auth_identities', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  provider: text('provider').notNull(),
+  providerAccountId: text('provider_account_id').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  { unique: 'auth_identities_provider_account_unique', columns: [table.provider, table.providerAccountId] },
+]);
+
 export const mcpConnections = pgTable('mcp_connections', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),

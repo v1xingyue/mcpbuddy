@@ -17,3 +17,5 @@ An account-scoped MCP connection hub for Claude, OpenAI and Grok, designed for V
 Create GitHub and Google OAuth clients, then add the variables in `.env.example`. The production callback URLs are `https://mcpbuddy.creatorsand.fun/api/auth/callback/github` and `https://mcpbuddy.creatorsand.fun/api/auth/callback/google`. Connect both Vercel Postgres and a **private** Vercel Blob store. Run `npm run build` before deploying.
 
 Run `drizzle/0000_initial.sql` once against Vercel Postgres. The unique `(kind, jti)` constraint gives authorization-code and refresh-token rotation an atomic replay barrier across serverless invocations. Blob is used for publishable file payloads.
+
+Before enabling Google login, run `drizzle/0003_auth_identities.sql` in the Vercel Postgres SQL editor. It preserves existing GitHub accounts and adds provider-specific identity mapping.

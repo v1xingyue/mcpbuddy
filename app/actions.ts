@@ -2,7 +2,7 @@
 
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
-import { users, walletBindings } from '@/lib/db/schema';
+import { authIdentities, users, walletBindings } from '@/lib/db/schema';
 import { publishedPages } from '@/lib/db/schema';
 import { walletChallenges } from '@/lib/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
@@ -15,7 +15,24 @@ import { revalidatePath } from 'next/cache';
 export async function provisionUser() {
   const session = await auth(); if (!session?.user?.id || !session.user.email) return null;
   const db = getDb();
-  const [user] = await db.insert(users).values({ githubId: session.user.id, email: session.user.email, name: session.user.name, image: session.user.image }).onConflictDoUpdate({ target: users.githubId, set: { email: session.user.email, name: session.user.name, image: session.user.image } }).returning();
+  const separator = session.user.id.indexOf(':');
+  const provider = separator > 0 ? session.user.id.slice(0, separator) : 'github';
+  const providerAccountId = separator > 0 ? session.user.id.slice(separator + 1) : session.user.id;
+  const [identity] = await db.select().from(authIdentities).where(and(eq(authIdentities.provider, provider), eq(authIdentities.providerAccountId, providerAccountId))).limit(1);
+  if (identity) {
+    const [user] = await db.select().from(users).where(eq(users.id, identity.userId)).limit(1);
+    if (user) return user;
+  }
+  // Accounts created before multi-provider support only have github_id. Adopt them on first login.
+  if (provider === 'github') {
+    const [legacyUser] = await db.select().from(users).where(eq(users.githubId, providerAccountId)).limit(1);
+    if (legacyUser) {
+      await db.insert(authIdentities).values({ userId: legacyUser.id, provider, providerAccountId }).onConflictDoNothing();
+      return legacyUser;
+    }
+  }
+  const [user] = await db.insert(users).values({ githubId: session.user.id, email: session.user.email, name: session.user.name, image: session.user.image }).returning();
+  await db.insert(authIdentities).values({ userId: user.id, provider, providerAccountId });
   return user;
 }
 

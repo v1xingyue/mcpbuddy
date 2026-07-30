@@ -5,12 +5,19 @@ import { put } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { verifyMcpToken } from '@/lib/mcp-auth';
 import { getDb } from '@/lib/db';
-import { platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
+import { authIdentities, platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 
-async function currentUser(githubId: unknown) {
-  if (typeof githubId !== 'string') throw new Error('Missing authenticated account identity.');
-  const [user] = await getDb().select().from(users).where(eq(users.githubId, githubId)).limit(1);
+async function currentUser(accountId: unknown) {
+  if (typeof accountId !== 'string') throw new Error('Missing authenticated account identity.');
+  const separator = accountId.indexOf(':');
+  const provider = separator > 0 ? accountId.slice(0, separator) : 'github';
+  const providerAccountId = separator > 0 ? accountId.slice(separator + 1) : accountId;
+  const db = getDb();
+  const [identity] = await db.select().from(authIdentities).where(and(eq(authIdentities.provider, provider), eq(authIdentities.providerAccountId, providerAccountId))).limit(1);
+  const [user] = identity
+    ? await db.select().from(users).where(eq(users.id, identity.userId)).limit(1)
+    : provider === 'github' ? await db.select().from(users).where(eq(users.githubId, providerAccountId)).limit(1) : [];
   if (!user) throw new Error('Your account has not been provisioned. Sign in to MCPBuddy once before connecting.');
   return user;
 }
