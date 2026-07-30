@@ -10,14 +10,17 @@ const platforms = [
 
 export function PlatformConnections({ connectedPlatforms }: { connectedPlatforms: string[] }) {
   const [connected, setConnected] = useState<Record<string, boolean>>({});
+  const [prompt, setPrompt] = useState<string | null>(null);
   useEffect(() => {
     const saved = localStorage.getItem('mcpbuddy-platform-connections');
     setConnected({ ...(saved ? JSON.parse(saved) : {}), ...Object.fromEntries(connectedPlatforms.map(platform => [platform, true])) });
   }, [connectedPlatforms]);
-  async function sayHi(platform: (typeof platforms)[number]) {
-    const prompt = `Use the MCPBuddy hello tool now with {"platform":"${platform.id}"} to confirm this connection.`;
-    await navigator.clipboard.writeText(prompt);
+  function sayHi(platform: (typeof platforms)[number]) {
+    const nextPrompt = `Use the MCPBuddy hello tool now with {"platform":"${platform.id}"} to confirm this connection.`;
+    // Opening must happen synchronously in the click handler or browsers treat it as a popup.
     window.open(platform.href, '_blank', 'noopener,noreferrer');
+    setPrompt(nextPrompt);
+    navigator.clipboard?.writeText(nextPrompt).catch(() => undefined);
   }
   return <div className="grid">{platforms.map((platform) => {
     const isConnected = !!connected[platform.id];
@@ -25,6 +28,7 @@ export function PlatformConnections({ connectedPlatforms }: { connectedPlatforms
       <div className="card-top"><div className="number">{platform.number}</div><span className={isConnected ? 'connection-status online' : 'connection-status'}>{isConnected ? '● Connected' : '○ Not connected'}</span></div>
       <h2>Connect {platform.name}</h2><p>{platform.description}</p>
       <div className="card-actions"><a href={platform.href} target="_blank" rel="noreferrer">Open {platform.name} ↗</a><button type="button" className="connection-toggle" onClick={() => sayHi(platform)}>Say hi from {platform.name}</button></div>
+      {prompt?.includes(`"${platform.id}"`) && <p className="hello-instruction">Copied (or copy this): <code>{prompt}</code></p>}
     </article>;
   })}</div>;
 }
