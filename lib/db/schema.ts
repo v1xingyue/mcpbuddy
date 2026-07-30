@@ -50,3 +50,13 @@ export const publishedPages = pgTable('published_pages', {
   blobUrl: text('blob_url'),
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 });
+
+export const platformConnections = pgTable('platform_connections', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  platform: text('platform').notNull(),
+  clientId: text('client_id').notNull(),
+  confirmedAt: timestamp('confirmed_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [
+  { unique: 'platform_connections_user_platform_unique', columns: [table.userId, table.platform] },
+]);
