@@ -3,10 +3,14 @@
 import { auth } from '@/auth';
 import { getDb } from '@/lib/db';
 import { users, walletBindings } from '@/lib/db/schema';
+import { publishedPages } from '@/lib/db/schema';
 import { walletChallenges } from '@/lib/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
 import nacl from 'tweetnacl';
 import bs58 from 'bs58';
+import { del } from '@vercel/blob';
+import { env } from '@/lib/config';
+import { revalidatePath } from 'next/cache';
 
 export async function provisionUser() {
   const session = await auth(); if (!session?.user?.id || !session.user.email) return null;
@@ -32,4 +36,13 @@ export async function bindWallet(address: string, message: string, signature: nu
   await db.delete(walletChallenges).where(eq(walletChallenges.id, challenge.id));
   await db.insert(walletBindings).values({ userId: user.id, address }).onConflictDoUpdate({ target: walletBindings.userId, set: { address, verifiedAt: new Date() } });
   return address;
+}
+
+export async function deletePublishedPage(pageId: string) {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in with GitHub first.');
+  const db = getDb(); const [page] = await db.select().from(publishedPages).where(and(eq(publishedPages.id, pageId), eq(publishedPages.userId, user.id))).limit(1);
+  if (!page) throw new Error('Page not found.');
+  if (page.blobUrl && env.BLOB_READ_WRITE_TOKEN) await del(page.blobUrl, { token: env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined);
+  await db.delete(publishedPages).where(eq(publishedPages.id, page.id));
+  revalidatePath('/'); revalidatePath(`/pages/${page.id}`); if (page.publicId) revalidatePath(`/p/${page.publicId}`);
 }
