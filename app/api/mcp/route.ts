@@ -14,6 +14,15 @@ async function currentUser(accountId: unknown) {
   const provider = separator > 0 ? accountId.slice(0, separator) : 'github';
   const providerAccountId = separator > 0 ? accountId.slice(separator + 1) : accountId;
   const db = getDb();
+  if (provider === 'wallet') {
+    const [binding] = await db.select().from(walletBindings).where(eq(walletBindings.address, providerAccountId)).limit(1);
+    if (binding) {
+      await db.insert(authIdentities).values({ userId: binding.userId, provider, providerAccountId })
+        .onConflictDoUpdate({ target: [authIdentities.provider, authIdentities.providerAccountId], set: { userId: binding.userId } });
+      const [boundUser] = await db.select().from(users).where(eq(users.id, binding.userId)).limit(1);
+      if (boundUser) return boundUser;
+    }
+  }
   const [identity] = await db.select().from(authIdentities).where(and(eq(authIdentities.provider, provider), eq(authIdentities.providerAccountId, providerAccountId))).limit(1);
   const [user] = identity
     ? await db.select().from(users).where(eq(users.id, identity.userId)).limit(1)
