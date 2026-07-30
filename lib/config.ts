@@ -23,7 +23,7 @@ export const env = envSchema.parse({
 });
 
 export function publicOrigin(request?: Request) {
-  return env.MCP_RESOURCE_URL ?? (request ? new URL(request.url).origin : env.NEXT_PUBLIC_APP_URL ?? 'http://localhost:3000');
+  return env.MCP_RESOURCE_URL ?? (request ? new URL(request.url).origin : env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun');
 }
 
 export function requireProductionStorage() {
