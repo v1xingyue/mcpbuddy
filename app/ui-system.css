@@ -26,7 +26,7 @@
 }
 
 html{background:var(--ui-canvas);scroll-behavior:smooth}
-body{background:radial-gradient(circle at 86% 0%,rgba(215,255,78,.13),transparent 25rem),var(--ui-canvas)}
+body{background:radial-gradient(circle at 86% 0%,rgba(215,255,78,.13),transparent 25rem),var(--ui-canvas);cursor:default}
 ::selection{background:var(--ui-accent);color:var(--ui-ink)}
 
 .ui-card{border:1px solid var(--ui-border);border-radius:var(--ui-radius-md);background:var(--ui-surface-raised);box-shadow:var(--ui-shadow-sm)}
@@ -37,6 +37,7 @@ body{background:radial-gradient(circle at 86% 0%,rgba(215,255,78,.13),transparen
 
 button:not(:disabled),a[href],summary{cursor:pointer}
 button:disabled{cursor:not-allowed}
+input,textarea,[contenteditable='true']{cursor:text}
 a,button,summary{transition:color var(--ui-duration-fast) ease,background var(--ui-duration-fast) ease,border-color var(--ui-duration-fast) ease,box-shadow var(--ui-duration-fast) ease,transform var(--ui-duration-fast) var(--ui-ease)}
 a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var(--ui-focus);outline-offset:3px}
 
@@ -56,3 +57,8 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var
 .page-row{transition:border-color var(--ui-duration-fast) ease,background var(--ui-duration-fast) ease}.page-row:hover{border-color:var(--ui-border-strong);background:rgba(255,255,255,.42)}.page-row>a{margin:0;padding-right:8px}.page-row>a:focus-visible{outline-offset:-3px}
 @media(max-width:720px){.sidebar nav a.active:before{display:none}.app-page-head{padding-bottom:20px}}
 @media(prefers-reduced-motion:reduce){.sidebar nav a,.page-row{transition:none}.sidebar nav a:hover{transform:none}}
+
+/* Cards only advertise a hand cursor when they perform an action. */
+.tool-list>li{margin:0;padding:0;list-style:none}.tool-card{position:relative;width:100%;display:grid;grid-template-columns:31px minmax(0,1fr) auto;align-items:start;gap:12px;padding:15px;border:1px solid #dfe7dc!important;border-radius:var(--ui-radius-md);background:rgba(255,255,255,.72)!important;color:var(--ui-ink)!important;text-align:left;cursor:pointer;box-shadow:0 1px 0 rgba(20,37,31,.02);transition:transform var(--ui-duration) var(--ui-ease),border-color var(--ui-duration) ease,background var(--ui-duration) ease,box-shadow var(--ui-duration) ease}.tool-card:hover{transform:translateY(-3px)!important;border-color:#aec3a5!important;background:#fff!important;box-shadow:0 15px 27px rgba(20,37,31,.12)!important}.tool-card:active{transform:translateY(-1px)!important;box-shadow:0 6px 12px rgba(20,37,31,.09)!important}.tool-card.copied{border-color:#86a67d!important;background:#f7fbf3!important}.tool-card-index{padding-top:4px;color:#86a67d;font:600 10px 'DM Mono';letter-spacing:.06em}.tool-card-content{display:grid;min-width:0}.tool-card-content .endpoint{justify-self:start;margin:0;padding:6px 8px;border-color:#e0e8dc;background:#f3f7ef;font-size:11px}.tool-card-content>span:last-child{margin-top:8px;color:var(--ui-muted);font:12px/1.55 Manrope}.tool-card-copy{align-self:center;padding:5px 7px;border-radius:999px;background:#edf3e9;color:#55718e;font:600 9px 'DM Mono';letter-spacing:.04em;opacity:0;transform:translateX(-3px);transition:opacity var(--ui-duration-fast) ease,transform var(--ui-duration-fast) var(--ui-ease)}.tool-card:hover .tool-card-copy,.tool-card:focus-visible .tool-card-copy,.tool-card.copied .tool-card-copy{opacity:1;transform:translateX(0)}
+.page-row{margin-bottom:8px;padding:0 10px;border:1px solid transparent!important;border-radius:var(--ui-radius-md);box-shadow:none;transition:transform var(--ui-duration-fast) var(--ui-ease),border-color var(--ui-duration-fast) ease,background var(--ui-duration-fast) ease,box-shadow var(--ui-duration-fast) ease}.page-row:hover{transform:translateY(-2px);border-color:var(--ui-border-strong)!important;background:var(--ui-surface-raised);box-shadow:var(--ui-shadow-sm)}
+@media(max-width:720px){.tool-card-copy{opacity:1;transform:none}.page-row:hover{transform:none}}@media(prefers-reduced-motion:reduce){.tool-card,.tool-card-copy,.page-row{transition:none}.tool-card:hover,.tool-card:active,.page-row:hover{transform:none}}
