@@ -4,6 +4,7 @@ import './brand.css';
 import './wallet-assets.css';
 import './identity-toggles.css';
 import './connection-cards.css';
+import './ui-system.css';
 
 export const metadata: Metadata = {
   title: 'MCPBuddy — your AI connection center',
