@@ -8,6 +8,7 @@ import { getDb } from '@/lib/db';
 import { authIdentities, platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
+import { contextPackForMcp } from '@/lib/context-pack';
 
 async function currentUser(accountId: unknown) {
   if (typeof accountId !== 'string') throw new Error('Missing authenticated account identity.');
@@ -74,11 +75,11 @@ const handler = createMcpHandler(
     );
     server.tool(
       'user_info',
-      'Read the current user’s private userinfo.md before starting work. It contains their profile, preferences, constraints, and goals.',
+      'Read the current user’s private AI Context Pack before starting work. It contains their profile, working preferences, hard limits, current goals, project notes, and tool guidance.',
       {},
       async (_args, extra) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
-        return { content: [{ type: 'text', text: user.userInfo || 'userinfo.md is empty. Ask the user to add their preferences in MCPBuddy Account settings.' }] };
+        return { content: [{ type: 'text', text: contextPackForMcp(user.userInfo) }] };
       },
     );
     server.tool(

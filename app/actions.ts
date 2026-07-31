@@ -75,7 +75,7 @@ export async function mergeDuplicateAccount(duplicateUserId: string) {
   revalidatePath('/'); revalidatePath('/pages'); revalidatePath('/tools');
 }
 
-/** Saves the private Markdown context returned by the MCP user_info tool. */
+/** Saves the private, account-scoped Markdown Context Pack returned by user_info. */
 export async function updateUserInfo(content: string) {
   const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   if (typeof content !== 'string' || content.length > 20_000) throw new Error('User info must be Markdown under 20,000 characters.');

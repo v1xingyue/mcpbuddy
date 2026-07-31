@@ -7,7 +7,7 @@ function Copy({ children }: { children: React.ReactNode }) { return <code classN
 export function DashboardTools() {
   const [copied, setCopied] = useState<string | null>(null);
   const tools = [
-    ['user_info()', 'Read the private userinfo.md context first—profile, preferences, constraints, and current goals.'],
+    ['user_info()', 'Read your private AI Context Pack first—profile, preferences, limits, goals, project notes, and tool guidance.'],
     ['hello(platform)', 'Records a verified connection after the selected AI client calls it.'],
     ['get_wallet_address()', 'Returns the verified Solana wallet address bound to the current account.'],
     ['get_solana_asset_balances()', 'Returns configured famous Solana-token balances with live USD prices and value per asset.'],
