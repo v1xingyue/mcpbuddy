@@ -43,8 +43,8 @@ async function pricesUsd() {
 
 /** Reads only a small allowlist of liquid Solana assets; it never requests signing authority. */
 export async function getMainSolanaAssetBalances(address: string, rpcUrl: string): Promise<SolanaAssetBalance[]> {
-  const [lamports, legacyAccounts, prices] = await Promise.all([
-    rpc<number>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]),
+  const [balanceResponse, legacyAccounts, prices] = await Promise.all([
+    rpc<{ value: number }>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]),
     rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]),
     pricesUsd(),
   ]);
@@ -56,7 +56,7 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
   return solanaAssets.map((asset) => {
-    const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(lamports), decimals: 9 };
+    const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value), decimals: 9 };
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
     const priceUsd = prices.get(asset.symbol) ?? null;
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
