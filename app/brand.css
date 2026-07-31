@@ -1,0 +1,15 @@
+.brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+}
+
+.brand-icon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+}
+
+.brand-wordmark span {
+  color: #4e7a43;
+}

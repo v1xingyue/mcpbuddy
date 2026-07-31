@@ -83,6 +83,27 @@ export async function updateUserInfo(content: string) {
   revalidatePath('/account');
 }
 
+/** Removes a secondary sign-in method while preserving an active way back into the account. */
+export async function unbindIdentity(provider: 'github' | 'google' | 'wallet') {
+  const session = await auth();
+  const user = await provisionUserForSession(session);
+  if (!user || !session?.user?.id) throw new Error('Sign in to MCPBuddy first.');
+  const separator = session.user.id.indexOf(':');
+  const activeProvider = separator > 0 ? session.user.id.slice(0, separator) : 'github';
+  if (activeProvider === provider) throw new Error('You cannot unbind the sign-in method currently being used. Sign in with another bound method first.');
+  const db = getDb();
+  const identities = await db.select({ provider: authIdentities.provider }).from(authIdentities).where(eq(authIdentities.userId, user.id));
+  const [wallet] = provider === 'wallet' ? await db.select({ id: walletBindings.id }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1) : [];
+  const isBound = identities.some(identity => identity.provider === provider) || (provider === 'wallet' && Boolean(wallet));
+  if (!isBound) throw new Error('This sign-in method is not currently bound.');
+  if (identities.filter(identity => identity.provider !== provider).length === 0) throw new Error('Bind another sign-in method before removing your last one.');
+  await db.transaction(async (tx) => {
+    await tx.delete(authIdentities).where(and(eq(authIdentities.userId, user.id), eq(authIdentities.provider, provider)));
+    if (provider === 'wallet') await tx.delete(walletBindings).where(eq(walletBindings.userId, user.id));
+  });
+  revalidatePath('/account');
+}
+
 export async function createWalletChallenge() {
   const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   const nonce = crypto.randomUUID(); const db = getDb(); const expiresAt = new Date(Date.now() + 5 * 60_000);

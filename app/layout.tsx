@@ -1,5 +1,8 @@
 import type { Metadata } from 'next';
 import './globals.css';
+import './brand.css';
+import './wallet-assets.css';
+import './identity-toggles.css';
 
 export const metadata: Metadata = {
   title: 'MCPBuddy — your AI connection center',
