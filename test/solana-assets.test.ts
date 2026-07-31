@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
+import { getMainSolanaAssetBalances, parseSolanaFamousTokens, solanaAssets } from '@/lib/solana-assets';
 
 describe('getMainSolanaAssetBalances', () => {
   afterEach(() => vi.unstubAllGlobals());
@@ -13,6 +13,17 @@ describe('getMainSolanaAssetBalances', () => {
       return Response.json({});
     }));
     const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example');
+    expect(assets.map(asset => asset.symbol)).toEqual(['SOL']);
     expect(assets.find(asset => asset.symbol === 'SOL')).toMatchObject({ balance: '1.5', priceUsd: 100, valueUsd: 150 });
+  });
+
+  it('loads the famous-token list from the JSON configuration', () => {
+    expect(solanaAssets.map(asset => asset.symbol)).toEqual(['SOL', 'USDC', 'USDT', 'wSOL', 'JUP', 'JTO', 'PYTH', 'RAY', 'WIF', 'BONK']);
+  });
+
+  it('accepts a custom famous-token list and rejects duplicate symbols', () => {
+    const configured = parseSolanaFamousTokens([{ symbol: 'PYTH', name: 'Pyth Network', mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', coingeckoId: 'pyth-network' }]);
+    expect(configured).toEqual([{ symbol: 'PYTH', name: 'Pyth Network', mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', coingeckoId: 'pyth-network' }]);
+    expect(() => parseSolanaFamousTokens([{ symbol: 'SOL', name: 'Solana', mint: null, coingeckoId: 'solana' }, { symbol: 'sol', name: 'Wrapped Solana', mint: 'So11111111111111111111111111111111111111112', coingeckoId: 'wrapped-solana' }])).toThrow('duplicate symbol');
   });
 });

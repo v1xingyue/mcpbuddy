@@ -32,7 +32,7 @@ MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。�
 | --- | --- |
 | `hello` | 接收来自 Grok、ChatGPT 或 Claude 的问候，并记录该平台连接已验证。 |
 | `get_wallet_address` | 返回当前已绑定账户的 Solana 钱包地址。 |
-| `get_solana_asset_balances` | 查询绑定钱包中 SOL、USDC、USDT、JUP、BONK 的余额、USD 价格及 USD 估值。 |
+| `get_solana_asset_balances` | 查询绑定钱包中配置的知名代币列表的余额、USD 价格及 USD 估值；默认包含 SOL、USDC、USDT、wSOL、JUP、JTO、PYTH、RAY、WIF、BONK。 |
 | `publish_page` | 将 Markdown 内容发布为公开页或仅自己可见的私有页。 |
 | `list_pages` | 读取当前账户已发布的页面列表。 |
 | `get_page_content` | 根据页面 ID 或精确标题读取当前账户文章的完整 Markdown 内容。 |

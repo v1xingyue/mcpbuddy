@@ -1,0 +1,62 @@
+[
+  {
+    "symbol": "SOL",
+    "name": "Solana",
+    "mint": null,
+    "coingeckoId": "solana"
+  },
+  {
+    "symbol": "USDC",
+    "name": "USD Coin",
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "coingeckoId": "usd-coin"
+  },
+  {
+    "symbol": "USDT",
+    "name": "Tether",
+    "mint": "Es9vMFrzaCERmJfrF4H2FYDUGNnNCKRrQkZ9p4M5f7p",
+    "coingeckoId": "tether"
+  },
+  {
+    "symbol": "wSOL",
+    "name": "Wrapped SOL",
+    "mint": "So11111111111111111111111111111111111111112",
+    "coingeckoId": "wrapped-solana"
+  },
+  {
+    "symbol": "JUP",
+    "name": "Jupiter",
+    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "coingeckoId": "jupiter-exchange-solana"
+  },
+  {
+    "symbol": "JTO",
+    "name": "Jito",
+    "mint": "jtojtomepa8beP8AuQc6eXt5friwgtEpdcV6qD2iABb",
+    "coingeckoId": "jito"
+  },
+  {
+    "symbol": "PYTH",
+    "name": "Pyth Network",
+    "mint": "HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6",
+    "coingeckoId": "pyth-network"
+  },
+  {
+    "symbol": "RAY",
+    "name": "Raydium",
+    "mint": "4k3Dyjzvzp8eMZWUXbEE3U5g6ZHHf7cP1HjE4A5YfEZZ",
+    "coingeckoId": "raydium"
+  },
+  {
+    "symbol": "WIF",
+    "name": "dogwifhat",
+    "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF7zJ45F8k3pZw6VQ7vT",
+    "coingeckoId": "dogwifcoin"
+  },
+  {
+    "symbol": "BONK",
+    "name": "Bonk",
+    "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6H7d3QY2fS2Z8vY",
+    "coingeckoId": "bonk"
+  }
+]

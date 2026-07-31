@@ -57,7 +57,7 @@ const handler = createMcpHandler(
     );
     server.tool(
       'get_solana_asset_balances',
-      'Return balances, current USD prices, and USD valuations for SOL, USDC, USDT, JUP, and BONK in the Solana wallet bound to the current account. Read-only; it cannot sign or submit transactions.',
+      'Return balances, current USD prices, and USD valuations for the configured famous Solana-token list in the wallet bound to the current account. Read-only; it cannot sign or submit transactions.',
       {},
       async (_args, extra) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
