@@ -18,4 +18,6 @@ Create GitHub and Google OAuth clients, then add the variables in `.env.example`
 
 Run `drizzle/0000_initial.sql` once against Vercel Postgres. The unique `(kind, jti)` constraint gives authorization-code and refresh-token rotation an atomic replay barrier across serverless invocations. Blob is used for publishable file payloads.
 
+`get_solana_asset_balances` reads the bound wallet's SOL, USDC, USDT, JUP, and BONK balances and returns a USD quote for each. Set `SOLANA_RPC_URL` to a production RPC provider endpoint to avoid public-RPC rate limits; when omitted, it uses Solana's public mainnet endpoint. Prices are fetched from CoinGecko and are indicative only.
+
 Before enabling Google login, run `drizzle/0003_auth_identities.sql` in the Vercel Postgres SQL editor. It preserves existing GitHub accounts and adds provider-specific identity mapping.

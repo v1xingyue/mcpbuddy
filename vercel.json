@@ -1,5 +1,5 @@
 {
   "framework": "nextjs",
-  "regions": ["sin1"],
+  "regions": ["iad1"],
   "functions": { "app/api/mcp/route.ts": { "maxDuration": 30 } }
 }

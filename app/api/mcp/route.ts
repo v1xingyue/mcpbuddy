@@ -7,6 +7,7 @@ import { verifyMcpToken } from '@/lib/mcp-auth';
 import { getDb } from '@/lib/db';
 import { authIdentities, platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
 import { env } from '@/lib/config';
+import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 
 async function currentUser(accountId: unknown) {
   if (typeof accountId !== 'string') throw new Error('Missing authenticated account identity.');
@@ -52,6 +53,23 @@ const handler = createMcpHandler(
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1);
         return { content: [{ type: 'text', text: wallet?.address ?? 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
+      },
+    );
+    server.tool(
+      'get_solana_asset_balances',
+      'Return balances, current USD prices, and USD valuations for SOL, USDC, USDT, JUP, and BONK in the Solana wallet bound to the current account. Read-only; it cannot sign or submit transactions.',
+      {},
+      async (_args, extra) => {
+        const user = await currentUser(extra.authInfo?.extra?.githubId);
+        const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1);
+        if (!wallet) return { content: [{ type: 'text', text: 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
+        try {
+          const assets = await getMainSolanaAssetBalances(wallet.address, env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com');
+          return { content: [{ type: 'text', text: JSON.stringify({ walletAddress: wallet.address, quoteCurrency: 'USD', assets }) }] };
+        } catch (error) {
+          const message = error instanceof Error ? error.message : 'Unknown error.';
+          return { content: [{ type: 'text', text: `Could not retrieve Solana asset balances: ${message}` }], isError: true };
+        }
       },
     );
     server.tool(

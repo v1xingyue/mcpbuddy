@@ -9,6 +9,7 @@ const envSchema = z.object({
   OAUTH_SECRET: z.string().min(32).optional(),
   MCP_RESOURCE_URL: z.string().url().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
+  SOLANA_RPC_URL: z.string().url().optional(),
 });
 
 export const env = envSchema.parse({
@@ -20,6 +21,7 @@ export const env = envSchema.parse({
   OAUTH_SECRET: process.env.OAUTH_SECRET,
   MCP_RESOURCE_URL: process.env.MCP_RESOURCE_URL,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
+  SOLANA_RPC_URL: process.env.SOLANA_RPC_URL,
 });
 
 export function publicOrigin(request?: Request) {
