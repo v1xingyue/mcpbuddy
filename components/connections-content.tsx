@@ -11,5 +11,5 @@ function ConnectionSkeleton() {
 export function ConnectionsContent({ endpoint }: { endpoint: string }) {
   const [connectedPlatforms, setConnectedPlatforms] = useState<string[] | null>(null);
   useEffect(() => { let active = true; fetch('/api/dashboard/connections', { cache: 'no-store' }).then(response => response.ok ? response.json() : { connectedPlatforms: [] }).then(data => { if (active) setConnectedPlatforms(data.connectedPlatforms ?? []); }).catch(() => { if (active) setConnectedPlatforms([]); }); return () => { active = false; }; }, []);
-  return <><EndpointCard endpoint={endpoint} />{connectedPlatforms === null ? <ConnectionSkeleton /> : <PlatformConnections connectedPlatforms={connectedPlatforms} />}</>;
+  return <>{connectedPlatforms === null ? <><EndpointCard endpoint={endpoint} /><ConnectionSkeleton /></> : <PlatformConnections endpoint={endpoint} connectedPlatforms={connectedPlatforms} />}</>;
 }
