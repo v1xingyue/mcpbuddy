@@ -106,6 +106,35 @@ const handler = createMcpHandler(
         return { content: [{ type: 'text', text: JSON.stringify(pages) }] };
       },
     );
+    server.tool(
+      'get_page_content',
+      'Read the full Markdown content of one of the current account’s published pages. Supply exactly one of id or title. Titles must match exactly; use list_pages first to obtain an id when titles are duplicated.',
+      {
+        id: z.string().uuid().optional().describe('The page UUID returned by list_pages.'),
+        title: z.string().min(1).max(140).optional().describe('The exact page title. Use id instead if more than one page has this title.'),
+      },
+      async ({ id, title }, extra) => {
+        const user = await currentUser(extra.authInfo?.extra?.githubId);
+        if ((id ? 1 : 0) + (title ? 1 : 0) !== 1) {
+          return { content: [{ type: 'text', text: 'Provide exactly one of id or title.' }], isError: true };
+        }
+
+        const pages = await getDb()
+          .select({ id: publishedPages.id, slug: publishedPages.slug, title: publishedPages.title, content: publishedPages.content, isPublic: publishedPages.isPublic, updatedAt: publishedPages.updatedAt })
+          .from(publishedPages)
+          .where(and(eq(publishedPages.userId, user.id), id ? eq(publishedPages.id, id) : eq(publishedPages.title, title!)))
+          .limit(2);
+
+        if (pages.length === 0) {
+          return { content: [{ type: 'text', text: `No page found with the supplied ${id ? 'id' : 'title'}.` }], isError: true };
+        }
+        if (pages.length > 1) {
+          return { content: [{ type: 'text', text: JSON.stringify({ error: 'More than one page has this title. Call get_page_content with an id instead.', matches: pages.map(({ id: pageId, slug, title: pageTitle }) => ({ id: pageId, slug, title: pageTitle })) }) }], isError: true };
+        }
+
+        return { content: [{ type: 'text', text: JSON.stringify(pages[0]) }] };
+      },
+    );
   },
   { serverInfo: { name: 'MCPBuddy', version: '0.2.0' } },
   { basePath: '/api', maxDuration: 60, disableSse: true },

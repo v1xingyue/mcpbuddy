@@ -35,6 +35,7 @@ MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。�
 | `get_solana_asset_balances` | 查询绑定钱包中 SOL、USDC、USDT、JUP、BONK 的余额、USD 价格及 USD 估值。 |
 | `publish_page` | 将 Markdown 内容发布为公开页或仅自己可见的私有页。 |
 | `list_pages` | 读取当前账户已发布的页面列表。 |
+| `get_page_content` | 根据页面 ID 或精确标题读取当前账户文章的完整 Markdown 内容。 |
 
 ### 内容页面
 
