@@ -10,6 +10,7 @@ const envSchema = z.object({
   MCP_RESOURCE_URL: z.string().url().optional(),
   NEXT_PUBLIC_APP_URL: z.string().url().optional(),
   SOLANA_RPC_URL: z.string().url().optional(),
+  JUPITER_API_KEY: z.string().min(1).optional(),
 });
 
 export const env = envSchema.parse({
@@ -22,6 +23,7 @@ export const env = envSchema.parse({
   MCP_RESOURCE_URL: process.env.MCP_RESOURCE_URL,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   SOLANA_RPC_URL: process.env.SOLANA_RPC_URL,
+  JUPITER_API_KEY: process.env.JUPITER_API_KEY,
 });
 
 export function publicOrigin(request?: Request) {

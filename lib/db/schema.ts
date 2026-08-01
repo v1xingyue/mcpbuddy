@@ -76,3 +76,19 @@ export const platformConnections = pgTable('platform_connections', {
 }, (table) => [
   { unique: 'platform_connections_user_platform_unique', columns: [table.userId, table.platform] },
 ]);
+
+export const swapTransactions = pgTable('swap_transactions', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  walletAddress: text('wallet_address').notNull(),
+  serializedTransaction: text('serialized_transaction').notNull(),
+  messageBase64: text('message_base64').notNull(),
+  transactionDigest: text('transaction_digest').notNull(),
+  summary: text('summary').notNull(),
+  status: text('status').notNull().default('awaiting_signature'),
+  signature: text('signature'),
+  error: text('error'),
+  expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  submittedAt: timestamp('submitted_at', { withTimezone: true }),
+});

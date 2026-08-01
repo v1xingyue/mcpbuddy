@@ -20,4 +20,12 @@ Run `drizzle/0000_initial.sql` once against Vercel Postgres. The unique `(kind, 
 
 `get_solana_asset_balances` reads the bound wallet's configured famous-token list and returns a USD quote for each. The included list covers SOL, USDC, USDT, wSOL, JUP, JTO, PYTH, RAY, WIF, and BONK. Edit [`config/solana-famous-tokens.json`](config/solana-famous-tokens.json) to choose the queried assets; each item requires `symbol`, `name`, `mint` (use `null` for SOL), and `coingeckoId`. Set `SOLANA_RPC_URL` to a production RPC provider endpoint to avoid public-RPC rate limits; when omitted, it uses Solana's public mainnet endpoint. Prices are fetched from CoinGecko and are indicative only.
 
+## Solana swaps
+
+Call `list_solana_swap_tokens()` before creating a trade. It returns the supported mainnet assets with their stable symbols, mint addresses, and decimals. The public MCP tool `create_solana_swap(inputToken, outputToken, amount, slippageBps)` accepts those symbols (for example, `SOL`, `USDC`) and a human-readable decimal amount (for example, `"0.1"`), so an external AI never has to guess a mint or its decimal precision. The server only permits tokens in this allowlist, converts the amount exactly to atomic units, and builds a Jupiter-routed swap for the account's bound wallet. The tool has no signing key and never broadcasts a transaction.
+
+It instead creates a five-minute pending item under **Account → Pending swaps**. The signing queue shows the payment, expected and minimum received amount, slippage, fee payer, involved program count, route, and a SHA-256 transaction-message fingerprint. “Review & sign all” uses the connected wallet's `signAllTransactions`, then sends each unchanged signed transaction to the account-scoped submit endpoint. The server verifies that the signed message byte-for-byte matches the reviewed unsigned message before RPC submission.
+
+Run `drizzle/0006_swap_transactions.sql` before enabling this feature. Configure `SOLANA_RPC_URL` with a production RPC endpoint. `JUPITER_API_KEY` is optional for Jupiter API plans that require it; it is sent only server-to-server.
+
 Before enabling Google login, run `drizzle/0003_auth_identities.sql` in the Vercel Postgres SQL editor. It preserves existing GitHub accounts and adds provider-specific identity mapping.

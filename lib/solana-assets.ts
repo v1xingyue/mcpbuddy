@@ -7,6 +7,7 @@ const solanaAssetSchema = z.object({
   symbol: z.string().trim().min(1).max(20),
   name: z.string().trim().min(1).max(100),
   mint: z.string().trim().min(32).max(44).nullable(),
+  decimals: z.number().int().min(0).max(18),
   coingeckoId: z.string().trim().min(1).max(100),
 });
 
@@ -30,6 +31,9 @@ export function parseSolanaFamousTokens(value: unknown): SolanaAsset[] {
 }
 
 export const solanaAssets = parseSolanaFamousTokens(famousTokensConfig);
+
+/** Allowlisted assets for swap tools; symbols, not mint addresses, form the public API. */
+export const solanaSwapTokens = solanaAssets.map(asset => ({ ...asset, mint: asset.mint ?? 'So11111111111111111111111111111111111111112' }));
 
 type RpcResponse<T> = { result?: T; error?: { message?: string } };
 type TokenAccount = { account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };

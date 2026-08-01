@@ -8,7 +8,9 @@ import { getDb } from '@/lib/db';
 import { authIdentities, platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
+import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
+import { createSwapForUser } from '@/lib/solana-swap';
 
 async function currentUser(accountId: unknown) {
   if (typeof accountId !== 'string') throw new Error('Missing authenticated account identity.');
@@ -70,6 +72,31 @@ const handler = createMcpHandler(
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error.';
           return { content: [{ type: 'text', text: `Could not retrieve Solana asset balances: ${message}` }], isError: true };
+        }
+      },
+    );
+    server.tool(
+      'list_solana_swap_tokens',
+      'List the allowlisted Solana assets available to create_solana_swap. Call this before creating a swap; use each asset’s symbol, not its mint address.',
+      {},
+      async () => ({ content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', tokens: solanaSwapTokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }),
+    );
+    server.tool(
+      'create_solana_swap',
+      'Create a Jupiter-routed Solana swap as an unsigned, short-lived transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user must review and sign it in MCPBuddy.',
+      {
+        inputToken: z.string().min(1).max(20).describe('Input token symbol returned by list_solana_swap_tokens, for example SOL or USDC.'),
+        outputToken: z.string().min(1).max(20).describe('Output token symbol returned by list_solana_swap_tokens.'),
+        amount: z.string().regex(/^\d+(\.\d+)?$/).describe('Positive human-readable token amount, for example "0.1" SOL or "25" USDC.'),
+        slippageBps: z.number().int().min(1).max(1000).default(50).describe('Maximum slippage in basis points; 50 = 0.5%.'),
+      },
+      async (args, extra) => {
+        try {
+          const user = await currentUser(extra.authInfo?.extra?.githubId);
+          const result = await createSwapForUser(user.id, args);
+          return { content: [{ type: 'text', text: JSON.stringify({ ...result, signingRequired: true, nextStep: 'Open MCPBuddy Account → Pending swaps, inspect the immutable signing summary, then sign with the bound wallet.' }) }] };
+        } catch (error) {
+          return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create swap transaction.' }], isError: true };
         }
       },
     );
