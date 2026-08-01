@@ -3,10 +3,9 @@
 import { useState } from 'react';
 import { VersionedTransaction } from '@solana/web3.js';
 
-type Summary = { inputMint: string; outputMint: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
+type Summary = { inputToken?: string; outputToken?: string; inputMint: string; outputMint: string; inputAmount?: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; feePayer: string; instructionProgramIds: string[]; transactionDigest: string };
 type Pending = { id: string; serializedTransaction: string; summary: string; expiresAt: Date; createdAt: Date };
-type Provider = { signAllTransactions(transactions: VersionedTransaction[]): Promise<VersionedTransaction[]> };
-
+type Provider = { signTransaction?(transaction: VersionedTransaction): Promise<VersionedTransaction>; signAllTransactions?(transactions: VersionedTransaction[]): Promise<VersionedTransaction[]> };
 function decode(value: string) { const binary = atob(value); return Uint8Array.from(binary, char => char.charCodeAt(0)); }
 function encode(value: Uint8Array) { let binary = ''; for (const byte of value) binary += String.fromCharCode(byte); return btoa(binary); }
 function short(value: string) { return `${value.slice(0, 5)}…${value.slice(-4)}`; }
@@ -14,24 +13,41 @@ function short(value: string) { return `${value.slice(0, 5)}…${value.slice(-4)
 export function PendingSwapsPanel({ swaps }: { swaps: Pending[] }) {
   const [status, setStatus] = useState(''); const [pending, setPending] = useState(false);
   const records = swaps.map(swap => ({ ...swap, summary: JSON.parse(swap.summary) as Summary }));
+  async function submit(record: (typeof records)[number], signed: VersionedTransaction) {
+    const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ signedTransaction: encode(signed.serialize()) }) });
+    const body = await response.json() as { signature?: string; error?: string };
+    if (!response.ok || !body.signature) throw new Error(body.error ?? 'Submission failed.');
+    return body.signature;
+  }
+  async function signOne(record: (typeof records)[number]) {
+    try {
+      setPending(true); setStatus('Opening your wallet to review this transaction…');
+      if (new Date(record.expiresAt) <= new Date()) throw new Error('This transaction has expired. Ask your AI client to create a fresh quote.');
+      const provider = (window as Window & { solana?: Provider }).solana;
+      if (!provider?.signTransaction) throw new Error('This wallet does not support signing a transaction.');
+      const signature = await submit(record, await provider.signTransaction(VersionedTransaction.deserialize(decode(record.serializedTransaction))));
+      setStatus(`Swap submitted: ${short(signature)}`); window.setTimeout(() => window.location.reload(), 1_000);
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Signing was cancelled or failed.'); } finally { setPending(false); }
+  }
   async function signAll() {
     try {
       setPending(true); setStatus('Opening your wallet to review the selected transactions…');
       const provider = (window as Window & { solana?: Provider }).solana;
-      if (!provider?.signAllTransactions) throw new Error('This wallet does not support batch signing. Use a Wallet Standard wallet with signAllTransactions.');
+      if (!provider?.signAllTransactions) throw new Error('This wallet does not support batch signing. Use single-transaction approval instead.');
       const active = records.filter(record => new Date(record.expiresAt) > new Date());
       if (!active.length) throw new Error('All pending transactions have expired. Ask your AI client to create fresh quotes.');
-      const transactions = active.map(record => VersionedTransaction.deserialize(decode(record.serializedTransaction)));
-      const signed = await provider.signAllTransactions(transactions);
-      const results = await Promise.all(signed.map(async (transaction, index) => {
-        const response = await fetch(`/api/swaps/${active[index].id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ signedTransaction: encode(transaction.serialize()) }) });
-        const body = await response.json() as { signature?: string; error?: string };
-        if (!response.ok) throw new Error(body.error ?? 'Submission failed.');
-        return body.signature!;
-      }));
-      setStatus(`${results.length} swap${results.length === 1 ? '' : 's'} submitted. ${results.map(short).join(', ')}`);
-      window.setTimeout(() => window.location.reload(), 1_500);
+      const signed = await provider.signAllTransactions(active.map(record => VersionedTransaction.deserialize(decode(record.serializedTransaction))));
+      const signatures = await Promise.all(signed.map((transaction, index) => submit(active[index], transaction)));
+      setStatus(`${signatures.length} swap${signatures.length === 1 ? '' : 's'} submitted. ${signatures.map(short).join(', ')}`); window.setTimeout(() => window.location.reload(), 1_500);
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Signing was cancelled or failed.'); } finally { setPending(false); }
   }
-  return <section className="pending-swaps" aria-labelledby="pending-swaps-title"><header><div><p className="label">SIGNING QUEUE</p><h2 id="pending-swaps-title">Pending swaps</h2><p>Every card is an immutable transaction generated for your bound wallet. Review the minimum received amount before signing.</p></div>{records.length > 0 && <button type="button" onClick={() => void signAll()} disabled={pending}>{pending ? 'Waiting for wallet…' : `Review & sign all (${records.length})`}</button>}</header>{records.length === 0 ? <p className="wallet-assets-empty">No pending swap transactions.</p> : <div className="pending-swap-list">{records.map(({ id, summary, expiresAt }) => <article className="pending-swap" key={id}><div className="pending-swap-title"><b>Swap</b><time>Expires {new Date(expiresAt).toLocaleTimeString()}</time></div><dl><div><dt>You pay</dt><dd>{summary.inputAmountAtomic} <small>{short(summary.inputMint)}</small></dd></div><div><dt>Expected / minimum receive</dt><dd>{summary.expectedOutputAtomic} / {summary.minimumOutputAtomic} <small>{short(summary.outputMint)}</small></dd></div><div><dt>Protection</dt><dd>{summary.slippageBps} bps max slippage{summary.priceImpactPct ? ` · ${summary.priceImpactPct}% price impact` : ''}</dd></div><div><dt>Transaction content</dt><dd>Fee payer {short(summary.feePayer)} · {summary.instructionProgramIds.length} program{summary.instructionProgramIds.length === 1 ? '' : 's'} · SHA-256 {summary.transactionDigest.slice(0, 12)}…</dd></div></dl>{summary.route.length > 0 && <p className="swap-route">Route: {summary.route.join(' → ')}</p>}</article>)}</div>}{status && <p className="swap-status" role="status">{status}</p>}</section>;
+  async function deleteOne(id: string) {
+    try {
+      setPending(true); setStatus('Deleting unsigned transaction…');
+      const response = await fetch(`/api/swaps/${id}/submit`, { method: 'DELETE' });
+      if (!response.ok) { const body = await response.json() as { error?: string }; throw new Error(body.error ?? 'Delete failed.'); }
+      setStatus('Unsigned transaction deleted.'); window.setTimeout(() => window.location.reload(), 500);
+    } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not delete transaction.'); } finally { setPending(false); }
+  }
+  return <section className="pending-swaps" aria-labelledby="pending-swaps-title"><header><div><p className="label">SIGNING QUEUE</p><h2 id="pending-swaps-title">Pending swaps</h2><p>Every card is an immutable transaction generated for your bound wallet. Review the minimum received amount before signing.</p></div>{records.length > 0 && <button type="button" onClick={() => void signAll()} disabled={pending}>{pending ? 'Waiting for wallet…' : `Review & sign all (${records.length})`}</button>}</header>{records.length === 0 ? <p className="wallet-assets-empty">No pending swap transactions.</p> : <div className="pending-swap-list">{records.map(record => <article className="pending-swap" key={record.id}><div className="pending-swap-title"><b>Swap</b><time>Expires {new Date(record.expiresAt).toLocaleTimeString()}</time></div><dl><div><dt>You pay</dt><dd>{record.summary.inputAmount ?? record.summary.inputAmountAtomic} {record.summary.inputToken ?? short(record.summary.inputMint)}</dd></div><div><dt>Expected / minimum receive</dt><dd>{record.summary.expectedOutputAtomic} / {record.summary.minimumOutputAtomic} <small>atomic {record.summary.outputToken ?? short(record.summary.outputMint)}</small></dd></div><div><dt>Protection</dt><dd>{record.summary.slippageBps} bps max slippage{record.summary.priceImpactPct ? ` · ${record.summary.priceImpactPct}% price impact` : ''}</dd></div><div><dt>Transaction content</dt><dd>Fee payer {short(record.summary.feePayer)} · {record.summary.instructionProgramIds.length} program{record.summary.instructionProgramIds.length === 1 ? '' : 's'} · SHA-256 {record.summary.transactionDigest.slice(0, 12)}…</dd></div></dl>{record.summary.route.length > 0 && <p className="swap-route">Route: {record.summary.route.join(' → ')}</p>}<div className="pending-swap-actions"><button type="button" onClick={() => void signOne(record)} disabled={pending}>Review & sign</button><button type="button" className="pending-swap-delete" onClick={() => void deleteOne(record.id)} disabled={pending}>Delete</button></div></article>)}</div>}{status && <p className="swap-status" role="status">{status}</p>}</section>;
 }

@@ -64,6 +64,14 @@ export async function pendingSwapsForUser(userId: string) {
   return getDb().select({ id: swapTransactions.id, serializedTransaction: swapTransactions.serializedTransaction, summary: swapTransactions.summary, status: swapTransactions.status, expiresAt: swapTransactions.expiresAt, createdAt: swapTransactions.createdAt }).from(swapTransactions).where(and(eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
 }
 
+/** Deletes only an unsubmitted transaction belonging to this account. No on-chain state exists yet. */
+export async function deletePendingSwap(userId: string, id: string) {
+  const [row] = await getDb().select({ id: swapTransactions.id, status: swapTransactions.status }).from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
+  if (!row) throw new Error('Swap transaction not found.');
+  if (row.status !== 'awaiting_signature') throw new Error(`Only an unsigned pending transaction can be deleted; this one is ${row.status}.`);
+  await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
+}
+
 export async function submitSignedSwap(userId: string, id: string, signedTransaction: string) {
   const [row] = await getDb().select().from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
   if (!row) throw new Error('Swap transaction not found.');
