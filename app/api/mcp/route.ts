@@ -12,6 +12,35 @@ import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
 import { createSwapForUser } from '@/lib/solana-swap';
 
+// MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
+// that do not implement MCP Apps still receive the text content returned by the tool.
+const SWAP_REVIEW_UI_URI = 'ui://mcpbuddy/swap-review.html';
+const SWAP_REVIEW_UI = `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+  :root { color-scheme: light dark; font-family: ui-sans-serif, system-ui, sans-serif; }
+  body { margin: 0; padding: 16px; color: #172033; background: transparent; }
+  .card { border: 1px solid #d6dcea; border-radius: 14px; padding: 16px; background: #fff; box-shadow: 0 4px 18px #17203312; }
+  .label { margin: 0 0 6px; font-size: 11px; font-weight: 700; letter-spacing: .08em; color: #56627a; }
+  h2 { margin: 0; font-size: 20px; } .amount { margin: 8px 0 16px; font-size: 16px; }
+  dl { display: grid; grid-template-columns: auto 1fr; gap: 8px 12px; margin: 0 0 16px; font-size: 13px; }
+  dt { color: #667085; } dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+  .notice { padding: 10px; border-radius: 8px; background: #fff8e6; color: #6b4e00; font-size: 13px; line-height: 1.4; }
+  button { width: 100%; border: 0; border-radius: 9px; padding: 11px 14px; margin-top: 14px; background: #155eef; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
+  button:hover { background: #004eea; } @media (prefers-color-scheme: dark) { .card { background: #192235; border-color: #34415b; } .notice { background: #41350e; color: #ffde83; } }
+</style></head><body><main class="card" aria-live="polite"><p class="label">UNSIGNED SWAP · REVIEW REQUIRED</p><h2 id="pair">Preparing transaction…</h2><p class="amount" id="amount"></p><dl id="details"></dl><div class="notice">This card cannot sign or submit a transaction. Review the immutable summary and sign only in MCPBuddy with your connected wallet.</div><button id="review" type="button">Open secure review & sign</button></main>
+<script>
+  const output = window.openai?.toolOutput || window.openai?.structuredContent || {};
+  const data = output.summary ? output : (output.structuredContent || {});
+  const summary = data.summary || {};
+  document.querySelector('#pair').textContent = summary.inputToken && summary.outputToken ? summary.inputToken + ' → ' + summary.outputToken : 'Swap created';
+  document.querySelector('#amount').textContent = summary.inputAmount && summary.inputToken ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : '';
+  const fields = [['Maximum slippage', summary.slippageBps != null ? (summary.slippageBps / 100) + '%' : '—'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', data.expiresAt ? new Date(data.expiresAt).toLocaleTimeString() : '—'], ['Transaction ID', data.transactionId || '—']];
+  const details = document.querySelector('#details');
+  fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
+  document.querySelector('#review').addEventListener('click', () => { if (data.reviewUrl) window.open(data.reviewUrl, '_blank', 'noopener'); });
+</script></body></html>`;
+
 async function currentUser(accountId: unknown) {
   if (typeof accountId !== 'string') throw new Error('Missing authenticated account identity.');
   const separator = accountId.indexOf(':');
@@ -37,6 +66,17 @@ async function currentUser(accountId: unknown) {
 
 const handler = createMcpHandler(
   (server) => {
+    server.registerResource(
+      'solana-swap-review',
+      SWAP_REVIEW_UI_URI,
+      {
+        title: 'Solana swap review',
+        description: 'Interactive review card for an unsigned Solana swap.',
+        mimeType: 'text/html+skybridge',
+        _meta: { 'openai/widgetPrefersBorder': true, 'openai/widgetAccessible': false },
+      },
+      async () => ({ contents: [{ uri: SWAP_REVIEW_UI_URI, mimeType: 'text/html+skybridge', text: SWAP_REVIEW_UI }] }),
+    );
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',
@@ -81,20 +121,32 @@ const handler = createMcpHandler(
       {},
       async () => ({ content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', tokens: solanaSwapTokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }),
     );
-    server.tool(
+    server.registerTool(
       'create_solana_swap',
-      'Create a Jupiter-routed Solana swap as an unsigned, short-lived transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user must review and sign it in MCPBuddy.',
       {
-        inputToken: z.string().min(1).max(20).describe('Input token symbol returned by list_solana_swap_tokens, for example SOL or USDC.'),
-        outputToken: z.string().min(1).max(20).describe('Output token symbol returned by list_solana_swap_tokens.'),
-        amount: z.string().regex(/^\d+(\.\d+)?$/).describe('Positive human-readable token amount, for example "0.1" SOL or "25" USDC.'),
-        slippageBps: z.number().int().min(1).max(1000).default(50).describe('Maximum slippage in basis points; 50 = 0.5%.'),
+        title: 'Create Solana swap',
+        description: 'Create a Jupiter-routed Solana swap as an unsigned, short-lived transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user must review and sign it in MCPBuddy.',
+        inputSchema: {
+          inputToken: z.string().min(1).max(20).describe('Input token symbol returned by list_solana_swap_tokens, for example SOL or USDC.'),
+          outputToken: z.string().min(1).max(20).describe('Output token symbol returned by list_solana_swap_tokens.'),
+          amount: z.string().regex(/^\d+(\.\d+)?$/).describe('Positive human-readable token amount, for example "0.1" SOL or "25" USDC.'),
+          slippageBps: z.number().int().min(1).max(1000).default(50).describe('Maximum slippage in basis points; 50 = 0.5%.'),
+        },
+        // `openai/outputTemplate` is used by ChatGPT Apps; `ui/resourceUri` lets
+        // other MCP Apps clients discover the same resource without parsing text.
+        _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI, 'ui/resourceUri': SWAP_REVIEW_UI_URI },
       },
       async (args, extra) => {
         try {
           const user = await currentUser(extra.authInfo?.extra?.githubId);
           const result = await createSwapForUser(user.id, args);
-          return { content: [{ type: 'text', text: JSON.stringify({ ...result, signingRequired: true, nextStep: 'Open MCPBuddy Account → Pending swaps, inspect the immutable signing summary, then sign with the bound wallet.' }) }] };
+          const origin = env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun';
+          const output = { ...result, reviewUrl: `${origin}/account`, signingRequired: true, nextStep: 'Open MCPBuddy Account → Pending swaps, inspect the immutable signing summary, then sign with the bound wallet.' };
+          return {
+            content: [{ type: 'text', text: `Unsigned ${result.summary.inputToken} → ${result.summary.outputToken} swap created. Review and sign it in MCPBuddy; it expires at ${result.expiresAt}.` }],
+            structuredContent: output,
+            _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI },
+          };
         } catch (error) {
           return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create swap transaction.' }], isError: true };
         }

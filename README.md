@@ -29,3 +29,14 @@ It instead creates a five-minute pending item under **Account → Pending swaps*
 Run `drizzle/0006_swap_transactions.sql` before enabling this feature. Configure `SOLANA_RPC_URL` with a production RPC endpoint. `JUPITER_API_KEY` is optional for Jupiter API plans that require it; it is sent only server-to-server.
 
 Before enabling Google login, run `drizzle/0003_auth_identities.sql` in the Vercel Postgres SQL editor. It preserves existing GitHub accounts and adds provider-specific identity mapping.
+
+## MCP interactive UI practice
+
+`create_solana_swap` is an end-to-end MCP Apps example. Its tool declaration advertises a `ui://mcpbuddy/swap-review.html` resource through `openai/outputTemplate` (and `ui/resourceUri` for other compatible clients). The resource delivers a sandboxed HTML review card; the tool result carries a short model-visible summary plus `structuredContent` for the card. Clients without MCP Apps UI support retain the same safe text-only workflow.
+
+Try it with an authenticated MCP client:
+
+1. Call `list_solana_swap_tokens()` and select two returned symbols.
+2. Call `create_solana_swap`, for example with `SOL`, `USDC`, `"0.01"`, and `50` basis points.
+3. Verify that an Apps-capable client renders the unsigned-swap review card. Its action only opens MCPBuddy’s Account page.
+4. Inspect the persisted pending swap and sign using the connected wallet. The component never receives a key, transaction bytes, or a signing capability.
