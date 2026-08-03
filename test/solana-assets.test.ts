@@ -42,6 +42,19 @@ describe('getMainSolanaAssetBalances', () => {
     expect(assets).not.toEqual(expect.arrayContaining([expect.objectContaining({ mint: unknownMint })]));
   });
 
+  it('includes a nonzero user-whitelisted SPL holding', async () => {
+    const customMint = '11111111111111111111111111111111111111112';
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ solana: { usd: 100 } });
+      const request = JSON.parse(String(init.body)) as { method?: string };
+      if (request.method === 'getBalance') return Response.json({ result: { value: 0 } });
+      if (request.method === 'getTokenAccountsByOwner') return Response.json({ result: { value: [{ pubkey: 'custom-token-account', account: { data: { parsed: { info: { mint: customMint, tokenAmount: { amount: '1234567', decimals: 6 } } } } } }] } });
+      return Response.json({});
+    }));
+    const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example', [{ symbol: 'CUSTOM', name: 'Custom token', mint: customMint, decimals: 0, coingeckoId: '' }]);
+    expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'CUSTOM', mint: customMint, balance: '1.234567', priceUsd: null, valueUsd: null })]));
+  });
+
   it('uses a mint-scoped lookup when an owner-wide scan returns empty', async () => {
     const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {

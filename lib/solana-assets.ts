@@ -141,6 +141,6 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
 }
 
 /** Backwards-compatible assets-only read for the MCP tool. */
-export async function getMainSolanaAssetBalances(address: string, rpcUrl: string): Promise<SolanaAssetBalance[]> {
-  return (await getMainSolanaPortfolio(address, rpcUrl)).assets;
+export async function getMainSolanaAssetBalances(address: string, rpcUrl: string, customAssets: SolanaAsset[] = []): Promise<SolanaAssetBalance[]> {
+  return (await getMainSolanaPortfolio(address, rpcUrl, customAssets)).assets;
 }

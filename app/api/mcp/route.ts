@@ -5,7 +5,7 @@ import { put } from '@vercel/blob';
 import { randomUUID } from 'crypto';
 import { verifyMcpToken } from '@/lib/mcp-auth';
 import { getDb } from '@/lib/db';
-import { authIdentities, platformConnections, publishedPages, users, walletBindings } from '@/lib/db/schema';
+import { authIdentities, platformConnections, publishedPages, users, walletBindings, walletTokenWatchlist } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
@@ -159,14 +159,19 @@ const handler = createMcpHandler(
     );
     server.tool(
       'get_solana_asset_balances',
-      'Return balances, current USD prices, and USD valuations for the configured famous Solana-token list in the wallet bound to the current account. Read-only; it cannot sign or submit transactions.',
+      'Return balances, current USD prices, and USD valuations for the configured famous Solana-token list and this account\'s tracked-token whitelist in the bound wallet. Read-only; it cannot sign or submit transactions.',
       {},
       async (_args, extra) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
-        const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1);
+        const db = getDb();
+        const [[wallet], watchlist] = await Promise.all([
+          db.select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1),
+          db.select({ mint: walletTokenWatchlist.mint, symbol: walletTokenWatchlist.symbol, name: walletTokenWatchlist.name }).from(walletTokenWatchlist).where(eq(walletTokenWatchlist.userId, user.id)),
+        ]);
         if (!wallet) return { content: [{ type: 'text', text: 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
         try {
-          const assets = await getMainSolanaAssetBalances(wallet.address, env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com');
+          const customAssets = watchlist.map(item => ({ ...item, decimals: 0, coingeckoId: '' }));
+          const assets = await getMainSolanaAssetBalances(wallet.address, env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com', customAssets);
           return { content: [{ type: 'text', text: JSON.stringify({ walletAddress: wallet.address, quoteCurrency: 'USD', assets }) }] };
         } catch (error) {
           const message = error instanceof Error ? error.message : 'Unknown error.';

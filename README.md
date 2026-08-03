@@ -18,7 +18,7 @@ Create GitHub and Google OAuth clients, then add the variables in `.env.example`
 
 Run `drizzle/0000_initial.sql` once against Vercel Postgres. The unique `(kind, jti)` constraint gives authorization-code and refresh-token rotation an atomic replay barrier across serverless invocations. Blob is used for publishable file payloads.
 
-`get_solana_asset_balances` reads the bound wallet's configured famous-token list and returns a USD quote for each. The included list covers SOL, USDC, USDT, wSOL, JUP, JTO, PYTH, RAY, WIF, and BONK. Edit [`config/solana-famous-tokens.json`](config/solana-famous-tokens.json) to choose the queried assets; each item requires `symbol`, `name`, `mint` (use `null` for SOL), and `coingeckoId`. Set `SOLANA_RPC_URL` to a production RPC provider endpoint to avoid public-RPC rate limits; when omitted, it uses Solana's public mainnet endpoint. Prices are fetched from CoinGecko and are indicative only.
+`get_solana_asset_balances` reads the bound wallet's configured famous-token list plus tokens in the current account's wallet whitelist, returning a USD quote where available. The included list covers SOL, USDC, USDT, wSOL, JUP, JTO, PYTH, RAY, WIF, and BONK. Whitelisted tokens are account-scoped, are included only when their balance is nonzero, and may have no USD quote. Edit [`config/solana-famous-tokens.json`](config/solana-famous-tokens.json) to choose the queried assets; each item requires `symbol`, `name`, `mint` (use `null` for SOL), and `coingeckoId`. Set `SOLANA_RPC_URL` to a production RPC provider endpoint to avoid public-RPC rate limits; when omitted, it uses Solana's public mainnet endpoint. Prices are fetched from CoinGecko and are indicative only.
 
 ## Solana swaps
 
