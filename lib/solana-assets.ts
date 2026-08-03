@@ -2,6 +2,7 @@ import { z } from 'zod';
 import famousTokensConfig from '@/config/solana-famous-tokens.json';
 
 const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const TOKEN_2022_PROGRAM_ID = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const PUBLIC_FALLBACK_RPC_URL = 'https://solana-rpc.publicnode.com';
 
 const solanaAssetSchema = z.object({
@@ -90,10 +91,11 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
   // rate-limited independently, so their failure must not hide a successful SOL read.
   const endpoints = rpcEndpoints(rpcUrl);
   const balanceResponse = await rpcWithFailover<{ value: number }>(endpoints, 'getBalance', [address, { commitment: 'confirmed' }]);
-  const [ownerScan, prices] = await Promise.all([
-    rpcWithFailover<{ value: TokenAccount[] }>(endpoints, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).then(result => ({ value: result.value, endpoint: result.endpoint, error: undefined as string | undefined })).catch(error => ({ value: null, endpoint: undefined as string | undefined, error: error instanceof Error ? error.message : 'Unknown token-account RPC error.' })),
+  const [ownerScans, prices] = await Promise.all([
+    Promise.all([TOKEN_PROGRAM_ID, TOKEN_2022_PROGRAM_ID].map(programId => rpcWithFailover<{ value: TokenAccount[] }>(endpoints, 'getTokenAccountsByOwner', [address, { programId }, { encoding: 'jsonParsed' }]).then(result => ({ value: result.value, endpoint: result.endpoint, error: undefined as string | undefined })).catch(error => ({ value: null, endpoint: undefined as string | undefined, error: error instanceof Error ? error.message : 'Unknown token-account RPC error.' })))),
     pricesUsd(),
   ]);
+  const ownerScan = { value: { value: ownerScans.flatMap(scan => scan.value?.value ?? []) }, endpoint: ownerScans.find(scan => scan.endpoint)?.endpoint, error: ownerScans.every(scan => scan.error) ? ownerScans.map(scan => scan.error).filter(Boolean).join('; ') : undefined as string | undefined };
   // Restore the mint-scoped fallback from the last known-good asset reader.
   // A few RPC providers return an empty owner-wide program scan while still
   // answering exact-mint requests (notably for USDC token accounts).
