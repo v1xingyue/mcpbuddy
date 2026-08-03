@@ -77,16 +77,7 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
     pricesUsd(),
   ]);
-  // Owner-wide scans can be incomplete or rate-limited on shared RPC tiers. Always
-  // query the small configured mint allowlist as well, then merge both sources.
-  // This is intentionally bounded to the assets we present in the UI.
-  const mintResults = await Promise.allSettled(
-    solanaAssets.filter(asset => asset.mint).map(asset => rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }])),
-  );
-  const tokenAccounts = [
-    ...(legacyAccounts?.value ?? []),
-    ...mintResults.flatMap(result => result.status === 'fulfilled' ? result.value.value : []),
-  ];
+  const tokenAccounts = legacyAccounts?.value ?? [];
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
   const seenAccounts = new Set<string>();
   for (const account of tokenAccounts) {
@@ -97,12 +88,11 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     const current = tokenAmounts.get(mint);
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
-  return solanaAssets.flatMap((asset) => {
+  return solanaAssets.map((asset) => {
     const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value), decimals: 9 };
-    if (!token || token.amount === 0n) return [];
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
     const priceUsd = prices.get(asset.symbol) ?? null;
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
-    return [{ symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd }];
+    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd };
   });
 }
