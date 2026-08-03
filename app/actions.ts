@@ -12,6 +12,8 @@ import bs58 from 'bs58';
 import { del } from '@vercel/blob';
 import { env } from '@/lib/config';
 import { revalidatePath } from 'next/cache';
+import { PublicKey } from '@solana/web3.js';
+import { walletTokenWatchlist } from '@/lib/db/schema';
 
 export async function provisionUserForSession(session: Session | null) {
   if (!session?.user?.id || !session.user.email) return null;
@@ -131,4 +133,13 @@ export async function deletePublishedPage(pageId: string) {
   if (page.blobUrl && env.BLOB_READ_WRITE_TOKEN) await del(page.blobUrl, { token: env.BLOB_READ_WRITE_TOKEN }).catch(() => undefined);
   await db.delete(publishedPages).where(eq(publishedPages.id, page.id));
   revalidatePath('/'); revalidatePath(`/pages/${page.id}`); if (page.publicId) revalidatePath(`/p/${page.publicId}`);
+}
+
+export async function addWalletTokenWatchlist(mint: string, symbol: string, name: string) {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
+  try { new PublicKey(mint); } catch { throw new Error('Mint must be a valid Solana address.'); }
+  const normalizedSymbol = symbol.trim().slice(0, 20) || `${mint.slice(0, 4)}…${mint.slice(-4)}`;
+  const normalizedName = name.trim().slice(0, 100) || 'Custom token';
+  await getDb().insert(walletTokenWatchlist).values({ userId: user.id, mint, symbol: normalizedSymbol, name: normalizedName }).onConflictDoNothing();
+  revalidatePath('/account');
 }

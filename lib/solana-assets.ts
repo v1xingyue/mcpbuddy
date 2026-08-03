@@ -85,7 +85,7 @@ async function pricesUsd() {
 }
 
 /** Reads only configured famous Solana assets; it never requests signing authority. */
-export async function getMainSolanaPortfolio(address: string, rpcUrl: string): Promise<SolanaPortfolio> {
+export async function getMainSolanaPortfolio(address: string, rpcUrl: string, customAssets: SolanaAsset[] = []): Promise<SolanaPortfolio> {
   // SOL is the essential portfolio value. Token-program endpoints are frequently
   // rate-limited independently, so their failure must not hide a successful SOL read.
   const endpoints = rpcEndpoints(rpcUrl);
@@ -97,7 +97,8 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
   // Restore the mint-scoped fallback from the last known-good asset reader.
   // A few RPC providers return an empty owner-wide program scan while still
   // answering exact-mint requests (notably for USDC token accounts).
-  const fallbackAssets = ownerScan.value?.value?.length ? [] : solanaAssets.filter(asset => asset.mint);
+  const trackedAssets = [...solanaAssets, ...customAssets.filter(custom => !solanaAssets.some(asset => asset.mint === custom.mint))];
+  const fallbackAssets = ownerScan.value?.value?.length ? [] : trackedAssets.filter(asset => asset.mint);
   const fallbackResults = await Promise.all(fallbackAssets.map(async asset => {
     try {
       const result = await rpcWithFailover<{ value: TokenAccount[] }>(endpoints, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }]);
@@ -117,7 +118,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
     const current = tokenAmounts.get(mint);
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
-  const configuredHoldings = solanaAssets.flatMap((asset) => {
+  const configuredHoldings = trackedAssets.flatMap((asset) => {
     const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value.value), decimals: 9 };
     if (!token || token.amount === 0n) return [];
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
@@ -125,7 +126,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
     return [{ symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd }];
   });
-  const configuredMints = new Set(solanaAssets.flatMap(asset => asset.mint ? [asset.mint] : []));
+  const configuredMints = new Set(trackedAssets.flatMap(asset => asset.mint ? [asset.mint] : []));
   const discoveredHoldings = [...tokenAmounts.entries()]
     .filter(([mint, token]) => !configuredMints.has(mint) && token.amount > 0n)
     .map(([mint, token]) => ({ symbol: `${mint.slice(0, 4)}…${mint.slice(-4)}`, name: 'Unrecognized SPL token', mint, balance: displayAmount(token.amount.toString(), token.decimals), priceUsd: null, valueUsd: null }));

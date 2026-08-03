@@ -92,3 +92,12 @@ export const swapTransactions = pgTable('swap_transactions', {
   createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   submittedAt: timestamp('submitted_at', { withTimezone: true }),
 });
+
+export const walletTokenWatchlist = pgTable('wallet_token_watchlist', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  mint: text('mint').notNull(),
+  symbol: text('symbol').notNull(),
+  name: text('name').notNull(),
+  createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [{ unique: 'wallet_token_watchlist_user_mint_unique', columns: [table.userId, table.mint] }]);
