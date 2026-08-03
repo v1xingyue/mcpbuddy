@@ -41,6 +41,7 @@ type TokenAccount = { pubkey?: string; account: { data: { parsed: { info: { mint
 export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null };
 
 function displayAmount(amount: string, decimals: number) {
+  if (decimals === 0) return amount;
   const padded = amount.padStart(decimals + 1, '0');
   const whole = padded.slice(0, -decimals) || '0';
   const fraction = decimals ? padded.slice(-decimals).replace(/0+$/, '') : '';
@@ -77,7 +78,14 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
     pricesUsd(),
   ]);
-  const tokenAccounts = legacyAccounts?.value ?? [];
+  // Restore the mint-scoped fallback from the last known-good asset reader.
+  // A few RPC providers return an empty owner-wide program scan while still
+  // answering exact-mint requests (notably for USDC token accounts).
+  const tokenAccounts = legacyAccounts?.value?.length
+    ? legacyAccounts.value
+    : (await Promise.allSettled(
+      solanaAssets.filter(asset => asset.mint).map(asset => rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }])),
+    )).flatMap(result => result.status === 'fulfilled' ? result.value.value : []);
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
   const seenAccounts = new Set<string>();
   for (const account of tokenAccounts) {
@@ -88,11 +96,17 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     const current = tokenAmounts.get(mint);
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
-  return solanaAssets.map((asset) => {
+  const configuredHoldings = solanaAssets.flatMap((asset) => {
     const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value), decimals: 9 };
+    if (!token || token.amount === 0n) return [];
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
     const priceUsd = prices.get(asset.symbol) ?? null;
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
-    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd };
+    return [{ symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd }];
   });
+  const configuredMints = new Set(solanaAssets.flatMap(asset => asset.mint ? [asset.mint] : []));
+  const discoveredHoldings = [...tokenAmounts.entries()]
+    .filter(([mint, token]) => !configuredMints.has(mint) && token.amount > 0n)
+    .map(([mint, token]) => ({ symbol: `${mint.slice(0, 4)}…${mint.slice(-4)}`, name: 'Unrecognized SPL token', mint, balance: displayAmount(token.amount.toString(), token.decimals), priceUsd: null, valueUsd: null }));
+  return [...configuredHoldings, ...discoveredHoldings];
 }
