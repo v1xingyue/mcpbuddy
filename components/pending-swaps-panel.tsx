@@ -1,44 +1,49 @@
 'use client';
 
 import { useEffect, useRef, useState } from 'react';
-import { VersionedTransaction } from '@solana/web3.js';
 
 type Summary = { inputToken?: string; outputToken?: string; inputMint: string; outputMint: string; inputAmount?: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; feePayer: string; instructionProgramIds: string[]; transactionDigest: string };
 type Pending = { id: string; serializedTransaction: string; summary: string; expiresAt: Date; createdAt: Date };
-type Provider = { signTransaction?(transaction: VersionedTransaction): Promise<VersionedTransaction>; signAllTransactions?(transactions: VersionedTransaction[]): Promise<VersionedTransaction[]> };
+type Provider = { signMessage?(message: Uint8Array): Promise<{ signature: Uint8Array }> };
 function decode(value: string) { const binary = atob(value); return Uint8Array.from(binary, char => char.charCodeAt(0)); }
 function encode(value: Uint8Array) { let binary = ''; for (const byte of value) binary += String.fromCharCode(byte); return btoa(binary); }
 function short(value: string) { return `${value.slice(0, 5)}…${value.slice(-4)}`; }
+function messageBytes(serialized: string) {
+  const bytes = decode(serialized); let signatures = 0; let shift = 0; let offset = 0;
+  for (;;) { const byte = bytes[offset++]; signatures |= (byte & 0x7f) << shift; if ((byte & 0x80) === 0) break; shift += 7; }
+  return bytes.slice(offset + signatures * 64);
+}
 
 export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; autoSignId?: string }) {
   const [status, setStatus] = useState(''); const [pending, setPending] = useState(false);
   const autoStarted = useRef(false);
   const records = swaps.map(swap => ({ ...swap, summary: JSON.parse(swap.summary) as Summary }));
-  async function submit(record: (typeof records)[number], signed: VersionedTransaction) {
-    // Preserve the original wire bytes before the wallet receives a mutable transaction object.
-    const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preSignTransaction: record.serializedTransaction, signedTransaction: encode(signed.serialize()) }) });
+  async function submitDetachedSignature(record: (typeof records)[number], messageSignature: Uint8Array) {
+    const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ messageSignature: encode(messageSignature) }) });
     const body = await response.json() as { signature?: string; error?: string };
     if (!response.ok || !body.signature) throw new Error(body.error ?? 'Submission failed.');
     return body.signature;
   }
   async function refresh(record: (typeof records)[number]) {
     const response = await fetch(`/api/swaps/${record.id}/refresh`, { method: 'POST' });
-    const body = await response.json() as { error?: string };
+    const body = await response.json() as { error?: string; transactionId?: string };
     if (!response.ok) throw new Error(body.error ?? 'Could not refresh the transaction.');
+    if (!body.transactionId) throw new Error('The refreshed transaction did not return an ID.');
+    return body.transactionId;
   }
   async function signOne(record: (typeof records)[number]) {
     try {
       setPending(true); setStatus('Opening your wallet to review this transaction…');
       if (new Date(record.expiresAt) <= new Date()) throw new Error('This transaction has expired. Ask your AI client to create a fresh quote.');
       if (Date.now() - new Date(record.createdAt).getTime() > 30_000) {
-        await refresh(record);
-        setStatus('A fresh quote is ready. Review its updated route and minimum received amount, then select Review & sign again.');
-        window.setTimeout(() => window.location.reload(), 800);
+        const refreshedId = await refresh(record);
+        setStatus('A fresh quote is ready. Reopening its review-and-sign flow…');
+        window.setTimeout(() => window.location.assign(`/account?swap=${refreshedId}`), 800);
         return;
       }
       const provider = (window as Window & { solana?: Provider }).solana;
-      if (!provider?.signTransaction) throw new Error('This wallet does not support signing a transaction.');
-      const signature = await submit(record, await provider.signTransaction(VersionedTransaction.deserialize(decode(record.serializedTransaction))));
+      if (!provider?.signMessage) throw new Error('This wallet does not support offline message signing. Use a Wallet Standard wallet that supports signMessage.');
+      const signature = await submitDetachedSignature(record, (await provider.signMessage(messageBytes(record.serializedTransaction))).signature);
       setStatus(`Swap submitted: ${short(signature)}`); window.setTimeout(() => window.location.reload(), 1_000);
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Signing was cancelled or failed.'); } finally { setPending(false); }
   }
@@ -46,7 +51,7 @@ export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; aut
     try {
       setPending(true); setStatus('Opening your wallet to review the selected transactions…');
       const provider = (window as Window & { solana?: Provider }).solana;
-      if (!provider?.signAllTransactions) throw new Error('This wallet does not support batch signing. Use single-transaction approval instead.');
+      if (!provider?.signMessage) throw new Error('This wallet does not support offline message signing. Use single-transaction approval instead.');
       const active = records.filter(record => new Date(record.expiresAt) > new Date());
       if (!active.length) throw new Error('All pending transactions have expired. Ask your AI client to create fresh quotes.');
       const stale = active.filter(record => Date.now() - new Date(record.createdAt).getTime() > 30_000);
@@ -56,8 +61,8 @@ export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; aut
         window.setTimeout(() => window.location.reload(), 800);
         return;
       }
-      const signed = await provider.signAllTransactions(active.map(record => VersionedTransaction.deserialize(decode(record.serializedTransaction))));
-      const signatures = await Promise.all(signed.map((transaction, index) => submit(active[index], transaction)));
+      const signatures: string[] = [];
+      for (const record of active) signatures.push(await submitDetachedSignature(record, (await provider.signMessage(messageBytes(record.serializedTransaction))).signature));
       setStatus(`${signatures.length} swap${signatures.length === 1 ? '' : 's'} submitted. ${signatures.map(short).join(', ')}`); window.setTimeout(() => window.location.reload(), 1_500);
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Signing was cancelled or failed.'); } finally { setPending(false); }
   }

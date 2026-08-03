@@ -29,6 +29,29 @@ function wireMessage(serialized: string) {
   return bytes.subarray(messageOffset);
 }
 
+function signatureArea(serialized: string) {
+  const bytes = Buffer.from(serialized, 'base64');
+  let count = 0; let shift = 0; let offset = 0;
+  for (;;) {
+    if (offset >= bytes.length || shift > 21) throw new Error('Invalid Solana transaction signature prefix.');
+    const byte = bytes[offset++]; count |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) break;
+    shift += 7;
+  }
+  const messageOffset = offset + count * 64;
+  if (count < 1 || messageOffset >= bytes.length) throw new Error('Invalid Solana transaction signature area.');
+  return { bytes, firstSignatureOffset: offset, message: bytes.subarray(messageOffset) };
+}
+
+/** Attach a detached fee-payer signature to the exact transaction the user reviewed. */
+export function attachDetachedSignature(serializedTransaction: string, messageSignature: Uint8Array, walletAddress: string) {
+  if (messageSignature.length !== 64) throw new Error(`Rejected: wallet returned a ${messageSignature.length}-byte message signature; Solana requires exactly 64 bytes.`);
+  const transaction = signatureArea(serializedTransaction);
+  if (!nacl.sign.detached.verify(transaction.message, messageSignature, bs58.decode(walletAddress))) throw new Error(`Rejected: this detached signature does not verify for bound wallet ${walletAddress} and the reviewed transaction message.`);
+  Buffer.from(messageSignature).copy(transaction.bytes, transaction.firstSignatureOffset);
+  return transaction.bytes.toString('base64');
+}
+
 function readCompactU16(bytes: Uint8Array, offset: number) {
   let value = 0; let shift = 0;
   for (;;) {
@@ -156,6 +179,26 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${row.walletAddress}. Confirm that the active wallet extension is connected to this account.`);
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
+  const body = await response.json() as { result?: string; error?: { message?: string } };
+  if (!response.ok || body.error || !body.result) { const message = body.error?.message ?? `RPC submission failed (${response.status}).`; await getDb().update(swapTransactions).set({ error: message }).where(eq(swapTransactions.id, row.id)); throw new Error(message); }
+  await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
+  return body.result;
+}
+
+/**
+ * Detached offline signing: the wallet signs only the immutable Solana message.
+ * The server verifies that signature, attaches it to the original wire transaction,
+ * and broadcasts those exact reviewed bytes.
+ */
+export async function submitDetachedSwapSignature(userId: string, id: string, messageSignature: string) {
+  const [row] = await getDb().select().from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
+  if (!row) throw new Error('Swap transaction not found.');
+  if (row.status !== 'awaiting_signature') throw new Error(`This transaction is already ${row.status}.`);
+  if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
+  if (Date.now() - row.createdAt.getTime() > 45_000) throw new Error('This signing payload is no longer current. Refresh the quote, review the new transaction, then sign it.');
+  const rawTransaction = attachDetachedSignature(row.serializedTransaction, Buffer.from(messageSignature, 'base64'), row.walletAddress);
+  const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
+  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [rawTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
   const body = await response.json() as { result?: string; error?: { message?: string } };
   if (!response.ok || body.error || !body.result) { const message = body.error?.message ?? `RPC submission failed (${response.status}).`; await getDb().update(swapTransactions).set({ error: message }).where(eq(swapTransactions.id, row.id)); throw new Error(message); }
   await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
