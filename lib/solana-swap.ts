@@ -8,6 +8,7 @@ import { solanaSwapTokens } from '@/lib/solana-assets';
 
 const JUPITER = 'https://api.jup.ag/swap/v1';
 type JupiterQuote = { inputMint: string; outputMint: string; inAmount: string; outAmount: string; otherAmountThreshold: string; priceImpactPct?: string; routePlan?: Array<{ swapInfo?: { label?: string } }> };
+type JupiterSwapBuild = { swapTransaction?: string; simulationError?: { errorCode?: string; error?: string } | string };
 type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
@@ -131,7 +132,8 @@ export async function createSwapForUser(userId: string, args: { inputToken: stri
   const quote = await quoteResponse.json() as JupiterQuote;
   const buildResponse = await fetch(`${JUPITER}/swap`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers() }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: wallet.address, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, blockhashSlotsToExpiry: 150 }) });
   if (!buildResponse.ok) { const detail = (await buildResponse.text()).slice(0, 2_000); throw new Error(`Jupiter transaction build failed (${buildResponse.status}).${detail ? ` Response: ${detail}` : ''}`); }
-  const built = await buildResponse.json() as { swapTransaction?: string };
+  const built = await buildResponse.json() as JupiterSwapBuild;
+  if (built.simulationError) { const detail = typeof built.simulationError === 'string' ? built.simulationError : `${built.simulationError.errorCode ?? 'SIMULATION_ERROR'}: ${built.simulationError.error ?? 'Unknown simulation error.'}`; throw new Error(`Jupiter built a transaction that failed simulation: ${detail}`); }
   if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction);
   if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
@@ -158,7 +160,7 @@ export async function createSwapByMintForUser(userId: string, args: { inputMint:
   const quote = await quoteResponse.json() as JupiterQuote;
   const buildResponse = await fetch(`${JUPITER}/swap`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers() }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: wallet.address, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, blockhashSlotsToExpiry: 150 }) });
   if (!buildResponse.ok) { const detail = (await buildResponse.text()).slice(0, 2_000); throw new Error(`Jupiter transaction build failed (${buildResponse.status}).${detail ? ` Response: ${detail}` : ''}`); }
-  const built = await buildResponse.json() as { swapTransaction?: string }; if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
+  const built = await buildResponse.json() as JupiterSwapBuild; if (built.simulationError) { const detail = typeof built.simulationError === 'string' ? built.simulationError : `${built.simulationError.errorCode ?? 'SIMULATION_ERROR'}: ${built.simulationError.error ?? 'Unknown simulation error.'}`; throw new Error(`Jupiter built a transaction that failed simulation: ${detail}`); } if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction); if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
   const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-4)}`;
   const summary: SigningSummary = { kind: 'swap', inputToken: short(inputMint.toBase58()), outputToken: short(outputMint.toBase58()), inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
