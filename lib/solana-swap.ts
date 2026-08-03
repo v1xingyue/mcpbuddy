@@ -2,7 +2,7 @@ import { createHash } from 'crypto';
 import { PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
-import { swapTransactions, walletBindings } from '@/lib/db/schema';
+import { swapTransactions, walletBindings, walletTokenWatchlist } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 
@@ -12,7 +12,9 @@ type JupiterSwapBuild = { swapTransaction?: string; simulationError?: { errorCod
 type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; expectedOutput?: string; minimumOutput?: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
-let quoteableTokenCache: { expiresAt: number; tokens: typeof solanaSwapTokens } | null = null;
+type SwapToken = (typeof solanaSwapTokens)[number];
+type WhitelistedSwapToken = { mint: string; symbol: string; name: string; decimals: number };
+let quoteableTokenCache: { expiresAt: number; tokens: SwapToken[]; key: string } | null = null;
 
 function headers(): Record<string, string> { if (!env.JUPITER_API_KEY) throw new Error('JUPITER_API_KEY is required for Jupiter Swap API v1. Configure it server-side before creating a swap.'); return { 'x-api-key': env.JUPITER_API_KEY }; }
 function digest(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
@@ -41,8 +43,8 @@ function inspect(serialized: string) {
   };
 }
 
-function token(symbol: string) {
-  const found = solanaSwapTokens.find(item => item.symbol.toUpperCase() === symbol.trim().toUpperCase());
+function token(symbol: string, tokens: SwapToken[] = solanaSwapTokens) {
+  const found = tokens.find(item => item.symbol.toUpperCase() === symbol.trim().toUpperCase());
   if (!found) {
     try {
       new PublicKey(symbol);
@@ -53,14 +55,40 @@ function token(symbol: string) {
   return found;
 }
 
-/** Returns only configured assets quoteable from the supplied input token and amount. */
-export async function quoteableSolanaSwapTokens(inputSymbol = 'USDC', inputAmount = '1') {
-  const input = token(inputSymbol);
+/** Merges account-owned whitelist entries without ever replacing a configured asset. */
+export function mergeWhitelistedSwapTokens(whitelist: WhitelistedSwapToken[]): SwapToken[] {
+  const configuredSymbols = new Set(solanaSwapTokens.map(item => item.symbol.toUpperCase()));
+  const configuredMints = new Set(solanaSwapTokens.map(item => item.mint));
+  const usedSymbols = new Set(configuredSymbols);
+  const customs = whitelist.flatMap(item => {
+    if (configuredMints.has(item.mint)) return [];
+    let symbol = item.symbol;
+    if (usedSymbols.has(symbol.toUpperCase())) symbol = `${symbol.slice(0, 14)}-${item.mint.slice(0, 4)}`;
+    if (usedSymbols.has(symbol.toUpperCase())) return [];
+    usedSymbols.add(symbol.toUpperCase());
+    return [{ symbol, name: item.name, mint: item.mint, decimals: item.decimals, coingeckoId: '' }];
+  });
+  return [...solanaSwapTokens, ...customs];
+}
+
+async function swapTokensForUser(userId: string): Promise<SwapToken[]> {
+  const whitelist = await getDb().select({ mint: walletTokenWatchlist.mint, symbol: walletTokenWatchlist.symbol, name: walletTokenWatchlist.name }).from(walletTokenWatchlist).where(eq(walletTokenWatchlist.userId, userId));
+  const hydrated = await Promise.all(whitelist.map(async item => {
+    const metadata = await jupiterToken(item.mint);
+    return metadata?.decimals === undefined ? null : { ...item, decimals: metadata.decimals };
+  }));
+  return mergeWhitelistedSwapTokens(hydrated.filter((item): item is WhitelistedSwapToken => Boolean(item)));
+}
+
+/** Returns only configured or account-whitelisted assets quoteable from the supplied input token and amount. */
+export async function quoteableSolanaSwapTokens(userId: string, inputSymbol = 'USDC', inputAmount = '1') {
+  const availableTokens = await swapTokensForUser(userId);
+  const input = token(inputSymbol, availableTokens);
   const amount = toAtomicAmount(inputAmount, input.decimals);
-  const cacheKey = `${input.symbol}:${amount}`;
-  if (quoteableTokenCache && quoteableTokenCache.expiresAt > Date.now() && (quoteableTokenCache as typeof quoteableTokenCache & { key?: string }).key === cacheKey) return quoteableTokenCache.tokens;
+  const cacheKey = `${userId}:${input.symbol}:${amount}`;
+  if (quoteableTokenCache && quoteableTokenCache.expiresAt > Date.now() && quoteableTokenCache.key === cacheKey) return quoteableTokenCache.tokens;
   const requestHeaders = headers();
-  const results = await Promise.all(solanaSwapTokens.map(async asset => {
+  const results = await Promise.all(availableTokens.map(async asset => {
     if (asset.mint === input.mint) return asset;
     const query = new URLSearchParams({ inputMint: input.mint, outputMint: asset.mint, amount, slippageBps: '50' });
     try {
@@ -70,10 +98,9 @@ export async function quoteableSolanaSwapTokens(inputSymbol = 'USDC', inputAmoun
       return quote.outAmount && BigInt(quote.outAmount) > 0n ? asset : null;
     } catch { return null; }
   }));
-  const tokens = results.filter((asset): asset is (typeof solanaSwapTokens)[number] => Boolean(asset)).filter((asset, index, all) => all.findIndex(candidate => candidate.mint === asset.mint) === index);
+  const tokens = results.filter((asset): asset is SwapToken => Boolean(asset)).filter((asset, index, all) => all.findIndex(candidate => candidate.mint === asset.mint) === index);
   if (!tokens.some(asset => asset.mint === input.mint)) throw new Error(`Jupiter quote validation returned no ${input.symbol} route. Check JUPITER_API_KEY and Jupiter API availability.`);
-  quoteableTokenCache = { tokens, expiresAt: Date.now() + 5 * 60_000 } as typeof quoteableTokenCache;
-  (quoteableTokenCache as typeof quoteableTokenCache & { key: string }).key = cacheKey;
+  quoteableTokenCache = { tokens, expiresAt: Date.now() + 5 * 60_000, key: cacheKey };
   return tokens;
 }
 
@@ -102,7 +129,7 @@ async function rpc<T>(method: string, params: unknown[]) {
 }
 
 export async function createTokenTransferForUser(userId: string, args: { token: string; recipient: string; amount: string }) {
-  const asset = token(args.token);
+  const asset = token(args.token, await swapTokensForUser(userId));
   if (asset.symbol === 'SOL') throw new Error('Use create_solana_sol_transfer for SOL. create_solana_token_transfer is for SPL tokens.');
   const amount = toAtomicAmount(args.amount, asset.decimals);
   const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, userId)).limit(1);
@@ -131,7 +158,8 @@ export async function createTokenTransferForUser(userId: string, args: { token: 
 }
 
 export async function createSwapForUser(userId: string, args: { inputToken: string; outputToken: string; amount: string; slippageBps: number }) {
-  const input = token(args.inputToken); const output = token(args.outputToken);
+  const availableTokens = await swapTokensForUser(userId);
+  const input = token(args.inputToken, availableTokens); const output = token(args.outputToken, availableTokens);
   if (input.mint === output.mint) throw new Error('Choose two different tokens.');
   const amount = toAtomicAmount(args.amount, input.decimals);
   if (!Number.isInteger(args.slippageBps) || args.slippageBps < 1 || args.slippageBps > 1_000) throw new Error('slippageBps must be an integer from 1 to 1000.');

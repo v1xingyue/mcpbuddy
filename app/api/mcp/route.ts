@@ -181,10 +181,10 @@ const handler = createMcpHandler(
     );
     server.tool(
       'list_solana_swap_tokens',
-      'List configured Solana assets currently quoteable by Jupiter from the supplied input token and amount. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
+      'List configured Solana assets and this account\'s whitelisted tokens currently quoteable by Jupiter from the supplied input token and amount. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
       { inputToken: z.string().min(1).max(20).default('USDC').describe('Input token symbol used for live route validation; defaults to USDC.'), amount: z.string().regex(/^\d+(\.\d+)?$/).default('1').describe('Human-readable input amount used for live route validation; defaults to 1.') },
-      async ({ inputToken, amount }) => {
-        try { const tokens = await quoteableSolanaSwapTokens(inputToken, amount); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), inputToken, amount, tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
+      async ({ inputToken, amount }, extra) => {
+        try { const user = await currentUser(extra.authInfo?.extra?.githubId); const tokens = await quoteableSolanaSwapTokens(user.id, inputToken, amount); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), inputToken, amount, tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
         catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not validate Jupiter token routes.' }], isError: true }; }
       },
     );
