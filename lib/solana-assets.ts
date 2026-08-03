@@ -70,13 +70,15 @@ async function pricesUsd() {
 
 /** Reads only configured famous Solana assets; it never requests signing authority. */
 export async function getMainSolanaAssetBalances(address: string, rpcUrl: string): Promise<SolanaAssetBalance[]> {
-  const [balanceResponse, legacyAccounts, prices] = await Promise.all([
-    rpc<{ value: number }>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]),
-    rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]),
+  // SOL is the essential portfolio value. Token-program endpoints are frequently
+  // rate-limited independently, so their failure must not hide a successful SOL read.
+  const balanceResponse = await rpc<{ value: number }>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]);
+  const [legacyAccounts, prices] = await Promise.all([
+    rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
     pricesUsd(),
   ]);
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
-  for (const account of legacyAccounts.value) {
+  for (const account of legacyAccounts?.value ?? []) {
     const token = account.account.data.parsed.info.tokenAmount;
     const mint = account.account.data.parsed.info.mint;
     const current = tokenAmounts.get(mint);
