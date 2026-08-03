@@ -43,6 +43,16 @@ npm run build
 npm run dev
 ```
 
+## Git push requirement
+
+After every completed change, commit the relevant files and push the current
+branch to GitHub. Before pushing, enable the local proxy for that command:
+
+```sh
+export https_proxy=http://127.0.0.1:7890 http_proxy=http://127.0.0.1:7890 all_proxy=socks5://127.0.0.1:7890
+git push
+```
+
 There is no separate lint configuration in this repository; do not treat
 `npm run lint` as a required validation command unless it is repaired first.
 
