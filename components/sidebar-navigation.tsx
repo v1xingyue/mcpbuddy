@@ -25,20 +25,20 @@ export function SidebarNavigation({ active }: { active: Area }) {
 
   return <nav className="sidebar-nav" aria-label="Application navigation">
     {primaryItems.map(({ id, href, label, Icon }) => <Link key={id} className={active === id ? 'active' : ''} href={href} aria-current={active === id ? 'page' : undefined}>
-      <Icon size={17} strokeWidth={1.8} aria-hidden="true" />{label}
+      <Icon size={15} strokeWidth={1.8} aria-hidden="true" />{label}
     </Link>)}
     <div className={`sidebar-nav-group${accountExpanded ? ' is-expanded' : ''}`}>
       <div className="sidebar-nav-group-heading">
         <Link className={active === 'account' ? 'active' : ''} href="/account/profile">
-          <Settings2 size={17} strokeWidth={1.8} aria-hidden="true" />Account
+          <Settings2 size={15} strokeWidth={1.8} aria-hidden="true" />Account
         </Link>
         <button type="button" className="sidebar-nav-toggle" aria-label={`${accountExpanded ? 'Collapse' : 'Expand'} Account menu`} aria-expanded={accountExpanded} aria-controls="account-submenu" onClick={() => setAccountExpanded((expanded) => !expanded)}>
-          <ChevronDown size={16} strokeWidth={2} aria-hidden="true" />
+          <ChevronDown size={14} strokeWidth={2} aria-hidden="true" />
         </button>
       </div>
       <div id="account-submenu" className="sidebar-submenu" hidden={!accountExpanded}>
         {accountItems.map(({ href, label, Icon }) => <Link key={href} href={href} className={pathname === href ? 'active' : ''} aria-current={pathname === href ? 'page' : undefined}>
-          <Icon size={15} strokeWidth={1.8} aria-hidden="true" />{label}
+          <Icon size={13} strokeWidth={1.8} aria-hidden="true" />{label}
         </Link>)}
       </div>
     </div>
