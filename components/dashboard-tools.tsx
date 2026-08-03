@@ -1,26 +1,9 @@
 'use client';
-
 import { useState } from 'react';
-
-function Copy({ children }: { children: React.ReactNode }) { return <code className="endpoint">{children}</code>; }
-
-export function DashboardTools() {
-  const [copied, setCopied] = useState<string | null>(null);
-  const tools = [
-    ['user_info()', 'Read your private AI Context Pack first—profile, preferences, limits, goals, project notes, and tool guidance.'],
-    ['hello(platform)', 'Records a verified connection after the selected AI client calls it.'],
-    ['get_wallet_address()', 'Returns the verified Solana wallet address bound to the current account.'],
-    ['get_solana_asset_balances()', 'Returns configured famous Solana-token balances with live USD prices and value per asset.'],
-    ['list_solana_swap_tokens()', 'Swap step 1 — lists mainnet token symbols and decimals. Call this first; use the returned symbol, not a guessed mint address.'],
-    ['create_solana_swap(inputToken, outputToken, amount, slippageBps)', 'Swap step 2 — creates an unsigned Jupiter transaction. Compatible MCP Apps clients receive an interactive review card; every client can still review and sign it from Account → Pending swaps.'],
-    ['publish_page(slug, title, content, public)', 'Public pages receive a shareable URL; private pages remain available only to you.'],
-    ['list_pages()', 'Lists pages available to the connected client.'],
-    ['get_page_content(id | title)', 'Reads a page’s full Markdown by its ID or exact title. Use the ID when titles are duplicated.'],
-  ] as const;
-  async function copyToolName(name: string) {
-    await navigator.clipboard?.writeText(name).catch(() => undefined);
-    setCopied(name);
-    window.setTimeout(() => setCopied(current => current === name ? null : current), 1_800);
-  }
-  return <section className="tools"><div><p className="eyebrow">AVAILABLE TOOLS</p><h2>Useful from day one.</h2><p className="tools-intro">Account-scoped capabilities available to your connected AI clients. For swaps, call the token list first, then create the unsigned transaction. Select a tool card to copy its invocation.</p></div><ol className="tool-list">{tools.map(([name, description], index) => <li key={name}><button type="button" className={copied === name ? 'tool-card copied ui-interactive-card' : 'tool-card ui-interactive-card'} onClick={() => void copyToolName(name)} aria-label={`Copy ${name}`}><span className="tool-card-index" aria-hidden="true">{String(index + 1).padStart(2, '0')}</span><span className="tool-card-content"><Copy>{name}</Copy><span>{description}</span></span><span className="tool-card-copy" aria-hidden="true">{copied === name ? 'Copied' : 'Copy'}</span></button></li>)}</ol></section>;
-}
+type Tool = { name: string; description: string; category: string };
+const tools: Tool[] = [
+  { category: 'Account', name: 'user_info()', description: 'Read the private AI Context Pack.' }, { category: 'Account', name: 'hello(platform)', description: 'Confirm a connected AI client.' },
+  { category: 'Solana', name: 'get_wallet_address()', description: 'Return the bound Solana wallet.' }, { category: 'Solana', name: 'get_solana_asset_balances()', description: 'Read token balances and USD values.' }, { category: 'Solana', name: 'list_solana_swap_tokens()', description: 'List allowlisted symbols, mints, and decimals.' }, { category: 'Solana', name: 'create_solana_swap(inputToken, outputToken, amount, slippageBps)', description: 'Create a Jupiter swap for wallet review.' }, { category: 'Solana', name: 'create_solana_token_transfer(token, recipient, amount)', description: 'Create an SPL-token transfer for wallet review.' },
+  { category: 'Content', name: 'publish_page(slug, title, content, public)', description: 'Publish an account-owned Markdown page.' }, { category: 'Content', name: 'list_pages()', description: 'List available pages.' }, { category: 'Content', name: 'get_page_content(id | title)', description: 'Read one page by ID or title.' },
+];
+export function DashboardTools() { const [selected, setSelected] = useState(() => new Set(tools.map(t => t.name))); const [status, setStatus] = useState(''); const categories = [...new Set(tools.map(t => t.category))]; function toggle(name: string) { setSelected(current => { const next = new Set(current); next.has(name) ? next.delete(name) : next.add(name); return next; }); } async function exportSelected() { const chosen = tools.filter(t => selected.has(t.name)); await navigator.clipboard.writeText(JSON.stringify({ tools: chosen }, null, 2)).catch(() => undefined); setStatus(`${chosen.length} tool definition(s) copied as JSON.`); } return <section className="tools"><header className="tools-head"><div><p className="eyebrow">MCP TOOL CATALOG</p><h2>Choose what to export.</h2><p className="tools-intro">Selections export a portable catalog; they do not change server-side authorization.</p></div><button type="button" onClick={() => void exportSelected()} disabled={!selected.size}>Export selected ({selected.size})</button></header>{categories.map(category => <section className="tool-group" key={category}><h3>{category}</h3><ol className="tool-list">{tools.filter(t => t.category === category).map(tool => <li key={tool.name}><label className="tool-card ui-interactive-card"><input type="checkbox" checked={selected.has(tool.name)} onChange={() => toggle(tool.name)} /><span className="tool-card-content"><code className="endpoint">{tool.name}</code><span>{tool.description}</span></span></label></li>)}</ol></section>)}{status && <p className="swap-status" role="status">{status}</p>}</section>; }

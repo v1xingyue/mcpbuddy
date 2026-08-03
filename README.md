@@ -32,7 +32,7 @@ Before enabling Google login, run `drizzle/0003_auth_identities.sql` in the Verc
 
 ## MCP interactive UI practice
 
-`create_solana_swap` is an end-to-end MCP Apps example. Its tool declaration advertises a `ui://mcpbuddy/swap-review.html` resource through `openai/outputTemplate` (and `ui/resourceUri` for other compatible clients). The resource delivers a sandboxed HTML review card; the tool result carries a short model-visible summary plus `structuredContent` for the card. Clients without MCP Apps UI support retain the same safe text-only workflow.
+`create_solana_swap` is an end-to-end MCP Apps example. Its tool declaration advertises a `ui://mcpbuddy/swap-review.html` resource through `openai/outputTemplate` (and `ui/resourceUri` for other compatible clients). The resource delivers a sandboxed HTML review card; the tool result carries a short model-visible summary plus `structuredContent` for the card. Clients without MCP Apps UI support retain the same text-only workflow. See [MCP UI return and deep-link flow](docs/mcp-app-ui-return.md) for the complete design.
 
 Try it with an authenticated MCP client:
 

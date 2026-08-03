@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { VersionedTransaction } from '@solana/web3.js';
+import { PublicKey, SystemProgram, TransactionInstruction, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { swapTransactions, walletBindings } from '@/lib/db/schema';
@@ -8,7 +8,8 @@ import { solanaSwapTokens } from '@/lib/solana-assets';
 
 const JUPITER = 'https://lite-api.jup.ag/swap/v1';
 type JupiterQuote = { inputMint: string; outputMint: string; inAmount: string; outAmount: string; otherAmountThreshold: string; priceImpactPct?: string; routePlan?: Array<{ swapInfo?: { label?: string } }> };
-type SigningSummary = { kind: 'swap'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
+type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
+const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 
 function headers(): Record<string, string> { return env.JUPITER_API_KEY ? { 'x-api-key': env.JUPITER_API_KEY } : {}; }
 function digest(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
@@ -50,6 +51,42 @@ function toAtomicAmount(value: string, decimals: number) {
   const atomic = BigInt(`${whole}${fraction.padEnd(decimals, '0')}`);
   if (atomic <= 0n) throw new Error('amount must be greater than zero.');
   return atomic.toString();
+}
+
+async function rpc<T>(method: string, params: unknown[]) {
+  const response = await fetch(env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method, params }) });
+  const body = await response.json() as { result?: T; error?: { message?: string } };
+  if (!response.ok || body.error || body.result === undefined) throw new Error(body.error?.message ?? `Solana RPC ${method} failed (${response.status}).`);
+  return body.result;
+}
+
+export async function createTokenTransferForUser(userId: string, args: { token: string; recipient: string; amount: string }) {
+  const asset = token(args.token);
+  if (asset.symbol === 'SOL') throw new Error('Use create_solana_sol_transfer for SOL. create_solana_token_transfer is for SPL tokens.');
+  const amount = toAtomicAmount(args.amount, asset.decimals);
+  const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, userId)).limit(1);
+  if (!wallet) throw new Error('No Solana wallet is bound to this account. Bind a wallet before creating a transfer.');
+  let recipient: PublicKey;
+  try { recipient = new PublicKey(args.recipient); } catch { throw new Error('recipient must be a valid Solana wallet address.'); }
+  const mint = new PublicKey(asset.mint);
+  type TokenAccounts = { value: Array<{ pubkey: string; account: { data: { parsed: { info: { tokenAmount: { amount: string } } } } } }> };
+  const [source, destination, blockhash] = await Promise.all([
+    rpc<TokenAccounts>('getTokenAccountsByOwner', [wallet.address, { mint: mint.toBase58() }, { encoding: 'jsonParsed', commitment: 'confirmed' }]),
+    rpc<TokenAccounts>('getTokenAccountsByOwner', [recipient.toBase58(), { mint: mint.toBase58() }, { encoding: 'jsonParsed', commitment: 'confirmed' }]),
+    rpc<{ value: { blockhash: string } }>('getLatestBlockhash', [{ commitment: 'confirmed' }]),
+  ]);
+  const sourceAccount = source.value.find(item => BigInt(item.account.data.parsed.info.tokenAmount.amount) >= BigInt(amount));
+  if (!sourceAccount) throw new Error(`Insufficient ${asset.symbol} balance in a token account.`);
+  const destinationAccount = destination.value[0];
+  if (!destinationAccount) throw new Error(`Recipient does not have a ${asset.symbol} token account. Ask them to receive ${asset.symbol} once before retrying.`);
+  const data = Buffer.alloc(10); data[0] = 12; data.writeBigUInt64LE(BigInt(amount), 1); data[9] = asset.decimals;
+  const instruction = new TransactionInstruction({ programId: TOKEN_PROGRAM_ID, keys: [{ pubkey: new PublicKey(sourceAccount.pubkey), isSigner: false, isWritable: true }, { pubkey: mint, isSigner: false, isWritable: false }, { pubkey: new PublicKey(destinationAccount.pubkey), isSigner: false, isWritable: true }, { pubkey: new PublicKey(wallet.address), isSigner: true, isWritable: false }], data });
+  const serializedTransaction = Buffer.from(new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(wallet.address), recentBlockhash: blockhash.value.blockhash, instructions: [instruction] }).compileToV0Message()).serialize()).toString('base64');
+  const details = inspect(serializedTransaction);
+  const summary: SigningSummary = { kind: 'transfer', inputToken: asset.symbol, outputToken: asset.symbol, inputMint: mint.toBase58(), outputMint: mint.toBase58(), inputAmount: args.amount, inputAmountAtomic: amount, expectedOutputAtomic: amount, minimumOutputAtomic: amount, slippageBps: 0, priceImpactPct: null, route: [], recipient: recipient.toBase58(), ...details };
+  const expiresAt = new Date(Date.now() + 5 * 60_000);
+  const [row] = await getDb().insert(swapTransactions).values({ userId, walletAddress: wallet.address, serializedTransaction, messageBase64: details.messageBase64, transactionDigest: details.transactionDigest, summary: JSON.stringify(summary), expiresAt }).returning({ id: swapTransactions.id });
+  return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
 }
 
 export async function createSwapForUser(userId: string, args: { inputToken: string; outputToken: string; amount: string; slippageBps: number }) {
@@ -121,6 +158,12 @@ export async function refreshSwapForUser(userId: string, id: string) {
   if (row.status !== 'awaiting_signature') throw new Error(`Only an unsigned transaction can be refreshed; this one is ${row.status}.`);
   if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
   const summary = JSON.parse(row.summary) as Partial<SigningSummary>;
+  if (summary.kind === 'transfer') {
+    if (!summary.inputToken || !summary.inputAmount || !summary.recipient) throw new Error('The saved transfer details are incomplete. Create a fresh transfer.');
+    const refreshed = await createTokenTransferForUser(userId, { token: summary.inputToken, amount: summary.inputAmount, recipient: summary.recipient });
+    await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
+    return refreshed;
+  }
   if (!summary.inputToken || !summary.outputToken || !summary.inputAmount || !summary.slippageBps) throw new Error('The saved swap details are incomplete. Request a fresh quote and transaction.');
   const refreshed = await createSwapForUser(userId, { inputToken: summary.inputToken, outputToken: summary.outputToken, amount: summary.inputAmount, slippageBps: summary.slippageBps });
   await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));

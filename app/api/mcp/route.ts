@@ -10,7 +10,7 @@ import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
-import { createSwapForUser } from '@/lib/solana-swap';
+import { createSwapForUser, createTokenTransferForUser } from '@/lib/solana-swap';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -31,14 +31,29 @@ const SWAP_REVIEW_UI = `<!doctype html>
 </style></head><body><main class="card" aria-live="polite"><p class="label">UNSIGNED SWAP · REVIEW REQUIRED</p><h2 id="pair">Preparing transaction…</h2><p class="amount" id="amount"></p><dl id="details"></dl><div class="notice">This card cannot sign or submit a transaction. Review the immutable summary and sign only in MCPBuddy with your connected wallet.</div><button id="review" type="button">Open secure review & sign</button></main>
 <script>
   const pair = document.querySelector('#pair'); const amount = document.querySelector('#amount'); const details = document.querySelector('#details'); const review = document.querySelector('#review'); let currentData = {};
-  function outputData() { const output = window.openai?.toolOutput || window.openai?.structuredContent || {}; return output.summary ? output : (output.structuredContent || {}); }
+  function asObject(value) {
+    if (typeof value === 'string') { try { return JSON.parse(value); } catch { return {}; } }
+    return value && typeof value === 'object' ? value : {};
+  }
+  function outputData() {
+    const candidates = [window.openai?.structuredContent, window.openai?.toolOutput];
+    for (const candidate of candidates) {
+      const output = asObject(candidate);
+      if (output.transactionId) return output;
+      const nested = asObject(output.structuredContent);
+      if (nested.transactionId) return nested;
+      const result = asObject(output.result);
+      if (result.transactionId) return result;
+    }
+    return {};
+  }
   function render() {
     currentData = outputData(); const summary = currentData.summary || {}; const ready = Boolean(currentData.transactionId);
-    pair.textContent = ready ? summary.inputToken + ' → ' + summary.outputToken : 'Creating unsigned swap…';
-    amount.textContent = ready ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : 'Waiting for MCPBuddy to return the reviewed transaction.';
+    pair.textContent = ready ? summary.inputToken + ' → ' + summary.outputToken : 'Transaction details unavailable';
+    amount.textContent = ready ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : 'The MCP client did not pass the tool structured data to this card. Use the review link in the tool response.';
     const fields = ready ? [['Maximum slippage', (summary.slippageBps / 100) + '%'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', new Date(currentData.expiresAt).toLocaleTimeString()], ['Transaction ID', currentData.transactionId]] : [];
     details.replaceChildren(); fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
-    review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Creating transaction…';
+    review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Awaiting structured tool result…';
   }
   review.addEventListener('click', () => { if (currentData.reviewUrl) window.open(currentData.reviewUrl, '_blank', 'noopener'); });
   // The Apps bridge changes globals after a tool call completes; re-render then.
@@ -81,6 +96,9 @@ const handler = createMcpHandler(
       },
       async () => ({ contents: [{ uri: SWAP_REVIEW_UI_URI, mimeType: 'text/html+skybridge', text: SWAP_REVIEW_UI }] }),
     );
+    server.tool('create_solana_token_transfer', 'Create an unsigned SPL-token transfer for review and wallet signing. Call list_solana_swap_tokens first; the recipient must already have a token account for this mint.', { token: z.string().min(1).max(20), recipient: z.string().min(32).max(64), amount: z.string().regex(/^\d+(\.\d+)?$/) }, async (args, extra) => {
+      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await createTokenTransferForUser(user.id, args); const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'; const reviewUrl = `${origin}/account?swap=${result.transactionId}`; return { content: [{ type: 'text', text: `Unsigned ${result.summary.inputAmount} ${result.summary.inputToken} transfer created for ${args.recipient}. Open ${reviewUrl} to review and sign.` }], structuredContent: { ...result, reviewUrl, signingRequired: true }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI } }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create token transfer.' }], isError: true }; }
+    });
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',
