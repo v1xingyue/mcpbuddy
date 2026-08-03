@@ -10,7 +10,7 @@ import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
-import { createSwapForUser, createTokenTransferForUser } from '@/lib/solana-swap';
+import { createSwapForUser, createTokenTransferForUser, quoteableSolanaSwapTokens } from '@/lib/solana-swap';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -139,9 +139,12 @@ const handler = createMcpHandler(
     );
     server.tool(
       'list_solana_swap_tokens',
-      'List the allowlisted Solana assets available to create_solana_swap. Call this before creating a swap; use each asset’s symbol, not its mint address.',
+      'List configured Solana assets currently quoteable by Jupiter against SOL. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
       {},
-      async () => ({ content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', tokens: solanaSwapTokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }),
+      async () => {
+        try { const tokens = await quoteableSolanaSwapTokens(); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), quotePair: 'SOL', tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
+        catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not validate Jupiter token routes.' }], isError: true }; }
+      },
     );
     server.registerTool(
       'create_solana_swap',

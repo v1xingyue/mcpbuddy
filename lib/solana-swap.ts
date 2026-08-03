@@ -10,6 +10,8 @@ const JUPITER = 'https://api.jup.ag/swap/v1';
 type JupiterQuote = { inputMint: string; outputMint: string; inAmount: string; outAmount: string; otherAmountThreshold: string; priceImpactPct?: string; routePlan?: Array<{ swapInfo?: { label?: string } }> };
 type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
+const WSOL_MINT = 'So11111111111111111111111111111111111111112';
+let quoteableTokenCache: { expiresAt: number; tokens: typeof solanaSwapTokens } | null = null;
 
 function headers(): Record<string, string> { if (!env.JUPITER_API_KEY) throw new Error('JUPITER_API_KEY is required for Jupiter Swap API v1. Configure it server-side before creating a swap.'); return { 'x-api-key': env.JUPITER_API_KEY }; }
 function digest(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
@@ -42,6 +44,27 @@ function token(symbol: string) {
   const found = solanaSwapTokens.find(item => item.symbol.toUpperCase() === symbol.trim().toUpperCase());
   if (!found) throw new Error(`Unsupported token "${symbol}". Call list_solana_swap_tokens first and use one of its symbols.`);
   return found;
+}
+
+/** Returns only configured assets that Jupiter can currently quote against SOL. */
+export async function quoteableSolanaSwapTokens() {
+  if (quoteableTokenCache && quoteableTokenCache.expiresAt > Date.now()) return quoteableTokenCache.tokens;
+  const requestHeaders = headers();
+  const results = await Promise.all(solanaSwapTokens.map(async asset => {
+    if (asset.mint === WSOL_MINT) return asset;
+    const amount = (10n ** BigInt(asset.decimals)).toString();
+    const query = new URLSearchParams({ inputMint: asset.mint, outputMint: WSOL_MINT, amount, slippageBps: '50' });
+    try {
+      const response = await fetch(`${JUPITER}/quote?${query}`, { headers: requestHeaders, cache: 'no-store' });
+      if (!response.ok) return null;
+      const quote = await response.json() as Partial<JupiterQuote>;
+      return quote.outAmount && BigInt(quote.outAmount) > 0n ? asset : null;
+    } catch { return null; }
+  }));
+  const tokens = results.filter((asset): asset is (typeof solanaSwapTokens)[number] => Boolean(asset)).filter((asset, index, all) => all.findIndex(candidate => candidate.mint === asset.mint) === index);
+  if (!tokens.some(asset => asset.mint === WSOL_MINT)) throw new Error('Jupiter quote validation returned no SOL route. Check JUPITER_API_KEY and Jupiter API availability.');
+  quoteableTokenCache = { tokens, expiresAt: Date.now() + 5 * 60_000 };
+  return tokens;
 }
 
 export function toAtomicAmount(value: string, decimals: number) {
