@@ -39,6 +39,8 @@ type RpcResponse<T> = { result?: T; error?: { message?: string } };
 type TokenAccount = { pubkey?: string; account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };
 
 export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null };
+export type SolanaPortfolioDiagnostics = { rpcHost: string; ownerScan: { status: 'ok' | 'error'; accountCount: number; error?: string }; mintFallback: Array<{ symbol: string; accountCount: number; error?: string }> };
+export type SolanaPortfolio = { assets: SolanaAssetBalance[]; diagnostics: SolanaPortfolioDiagnostics };
 
 function displayAmount(amount: string, decimals: number) {
   if (decimals === 0) return amount;
@@ -70,22 +72,27 @@ async function pricesUsd() {
 }
 
 /** Reads only configured famous Solana assets; it never requests signing authority. */
-export async function getMainSolanaAssetBalances(address: string, rpcUrl: string): Promise<SolanaAssetBalance[]> {
+export async function getMainSolanaPortfolio(address: string, rpcUrl: string): Promise<SolanaPortfolio> {
   // SOL is the essential portfolio value. Token-program endpoints are frequently
   // rate-limited independently, so their failure must not hide a successful SOL read.
   const balanceResponse = await rpc<{ value: number }>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]);
-  const [legacyAccounts, prices] = await Promise.all([
-    rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
+  const [ownerScan, prices] = await Promise.all([
+    rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).then(value => ({ value, error: undefined as string | undefined })).catch(error => ({ value: null, error: error instanceof Error ? error.message : 'Unknown token-account RPC error.' })),
     pricesUsd(),
   ]);
   // Restore the mint-scoped fallback from the last known-good asset reader.
   // A few RPC providers return an empty owner-wide program scan while still
   // answering exact-mint requests (notably for USDC token accounts).
-  const tokenAccounts = legacyAccounts?.value?.length
-    ? legacyAccounts.value
-    : (await Promise.allSettled(
-      solanaAssets.filter(asset => asset.mint).map(asset => rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }])),
-    )).flatMap(result => result.status === 'fulfilled' ? result.value.value : []);
+  const fallbackAssets = ownerScan.value?.value?.length ? [] : solanaAssets.filter(asset => asset.mint);
+  const fallbackResults = await Promise.all(fallbackAssets.map(async asset => {
+    try {
+      const value = await rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }]);
+      return { asset, accounts: value.value, error: undefined as string | undefined };
+    } catch (error) {
+      return { asset, accounts: [] as TokenAccount[], error: error instanceof Error ? error.message : 'Unknown mint RPC error.' };
+    }
+  }));
+  const tokenAccounts = ownerScan.value?.value?.length ? ownerScan.value.value : fallbackResults.flatMap(result => result.accounts);
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
   const seenAccounts = new Set<string>();
   for (const account of tokenAccounts) {
@@ -108,5 +115,17 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
   const discoveredHoldings = [...tokenAmounts.entries()]
     .filter(([mint, token]) => !configuredMints.has(mint) && token.amount > 0n)
     .map(([mint, token]) => ({ symbol: `${mint.slice(0, 4)}…${mint.slice(-4)}`, name: 'Unrecognized SPL token', mint, balance: displayAmount(token.amount.toString(), token.decimals), priceUsd: null, valueUsd: null }));
-  return [...configuredHoldings, ...discoveredHoldings];
+  return {
+    assets: [...configuredHoldings, ...discoveredHoldings],
+    diagnostics: {
+      rpcHost: new URL(rpcUrl).host,
+      ownerScan: { status: ownerScan.error ? 'error' : 'ok', accountCount: ownerScan.value?.value.length ?? 0, ...(ownerScan.error ? { error: ownerScan.error } : {}) },
+      mintFallback: fallbackResults.map(result => ({ symbol: result.asset.symbol, accountCount: result.accounts.length, ...(result.error ? { error: result.error } : {}) })),
+    },
+  };
+}
+
+/** Backwards-compatible assets-only read for the MCP tool. */
+export async function getMainSolanaAssetBalances(address: string, rpcUrl: string): Promise<SolanaAssetBalance[]> {
+  return (await getMainSolanaPortfolio(address, rpcUrl)).assets;
 }
