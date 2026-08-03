@@ -22,7 +22,7 @@ export function IdentityBindings({ providers }: { providers: string[] }) {
     setMessage('');
     if (bound.has(method.id)) { setSelected(method); dialog.current?.showModal(); return; }
     if (method.href) { window.location.assign(method.href); return; }
-    setMessage('Bind a Solana wallet from the wallet panel above.');
+    setMessage('Open the Wallet section to bind a Solana wallet.');
   }
 
   function confirm() {

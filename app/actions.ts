@@ -82,7 +82,7 @@ export async function updateUserInfo(content: string) {
   const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
   if (typeof content !== 'string' || content.length > 20_000) throw new Error('User info must be Markdown under 20,000 characters.');
   await getDb().update(users).set({ userInfo: content.trim() }).where(eq(users.id, user.id));
-  revalidatePath('/account');
+  revalidatePath('/account/profile');
 }
 
 /** Removes a secondary sign-in method while preserving an active way back into the account. */
@@ -103,7 +103,7 @@ export async function unbindIdentity(provider: 'github' | 'google' | 'wallet') {
     await tx.delete(authIdentities).where(and(eq(authIdentities.userId, user.id), eq(authIdentities.provider, provider)));
     if (provider === 'wallet') await tx.delete(walletBindings).where(eq(walletBindings.userId, user.id));
   });
-  revalidatePath('/account');
+  revalidatePath('/account/security');
 }
 
 export async function createWalletChallenge() {
@@ -141,5 +141,5 @@ export async function addWalletTokenWatchlist(mint: string, symbol: string, name
   const normalizedSymbol = symbol.trim().slice(0, 20) || `${mint.slice(0, 4)}…${mint.slice(-4)}`;
   const normalizedName = name.trim().slice(0, 100) || 'Custom token';
   await getDb().insert(walletTokenWatchlist).values({ userId: user.id, mint, symbol: normalizedSymbol, name: normalizedName }).onConflictDoNothing();
-  revalidatePath('/account');
+  revalidatePath('/account/wallet');
 }

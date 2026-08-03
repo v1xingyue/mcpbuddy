@@ -29,7 +29,7 @@ sequenceDiagram
   MCP->>DB: Store unsigned v0 transaction + reviewed summary + expiry
   MCP-->>AI: text + structuredContent + UI template metadata
   AI->>App: Resolve ui://mcpbuddy/swap-review.html
-  App->>Web: Open /account?swap={transactionId}
+  App->>Web: Open /account/wallet?swap={transactionId}
   Web->>DB: Load only current user's pending transaction
   Web->>Wallet: signTransaction(versioned transaction)
   Wallet-->>Web: Signed transaction
@@ -96,7 +96,7 @@ const output = {
   transactionId,
   expiresAt,
   summary,
-  reviewUrl: `${origin}/account?swap=${transactionId}`,
+  reviewUrl: `${origin}/account/wallet?swap=${transactionId}`,
   signingRequired: true,
   nextStep: 'Open reviewUrl to inspect and sign.',
 };
@@ -142,7 +142,7 @@ review.addEventListener('click', () => {
 链接形如：
 
 ```text
-https://<app-origin>/account?swap=<transaction-id>
+https://<app-origin>/account/wallet?swap=<transaction-id>
 ```
 
 账户页读取 query 参数，把 ID 传给待签名队列：
@@ -162,7 +162,7 @@ return <PendingSwapsPanel swaps={pendingSwaps} autoSignId={autoSignId} />;
 
 `useRef` 的 one-shot guard 避免 React 重新渲染、页面状态变化或重复 bridge 事件导致钱包弹窗多次出现。
 
-过期或过旧的交易不会直接签名：前端会请求 `/api/swaps/{id}/refresh`，然后跳转到新 ID 的 `/account?swap=<new-id>`。
+过期或过旧的交易不会直接签名：前端会请求 `/api/swaps/{id}/refresh`，然后跳转到新 ID 的 `/account/wallet?swap=<new-id>`。
 
 ## 6. 所有权、有效期与状态机
 
@@ -206,4 +206,3 @@ awaiting_signature → submitted
 | 自动 review/sign、刷新、删除、提交 | `components/pending-swaps-panel.tsx` |
 | 创建/保存/刷新/广播待签名交易 | `lib/solana-swap.ts` |
 | 签名兼容性和风险说明 | `docs/solana-offline-signing.md` |
-

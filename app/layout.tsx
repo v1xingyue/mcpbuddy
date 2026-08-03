@@ -3,6 +3,7 @@ import './globals.css';
 import './brand.css';
 import './wallet-assets.css';
 import './identity-toggles.css';
+import './account.css';
 import './connection-cards.css';
 import './ui-system.css';
 import { CardHoverSound } from '@/components/card-hover-sound';

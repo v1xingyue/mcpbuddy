@@ -38,7 +38,7 @@ export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; aut
       if (Date.now() - new Date(record.createdAt).getTime() > 30_000) {
         const refreshedId = await refresh(record);
         setStatus('A fresh quote is ready. Reopening its review-and-sign flow…');
-        window.setTimeout(() => window.location.assign(`/account?swap=${refreshedId}`), 800);
+        window.setTimeout(() => window.location.assign(`/account/wallet?swap=${refreshedId}`), 800);
         return;
       }
       const provider = (window as Window & { solana?: Provider }).solana;

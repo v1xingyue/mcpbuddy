@@ -1,10 +1,12 @@
 'use client';
 import { useState } from 'react';
+import { useRouter } from 'next/navigation';
 import { Check, Copy } from 'lucide-react';
 import { bindWallet, createWalletChallenge } from '@/app/actions';
 
 type SolanaProvider = { connect(): Promise<{ publicKey: { toString(): string } }>; signMessage(message: Uint8Array): Promise<{ signature: Uint8Array }> };
 export function WalletButton({ address }: { address?: string }) {
+  const router = useRouter();
   const [value, setValue] = useState(address); const [status, setStatus] = useState(''); const [pending, setPending] = useState(false); const [copied, setCopied] = useState(false);
   async function connect() {
     try {
@@ -12,7 +14,7 @@ export function WalletButton({ address }: { address?: string }) {
       const provider = (window as Window & { solana?: SolanaProvider }).solana;
       if (!provider) throw new Error('No Solana wallet found. Install Phantom, Backpack, or another Wallet Standard provider.');
       const result = await provider.connect(); const message = await createWalletChallenge(); const signed = await provider.signMessage(new TextEncoder().encode(message));
-      const next = await bindWallet(result.publicKey.toString(), message, Array.from(signed.signature)); setValue(next); setStatus('Wallet signature verified and bound.');
+      const next = await bindWallet(result.publicKey.toString(), message, Array.from(signed.signature)); setValue(next); setStatus('Wallet signature verified and bound.'); router.refresh();
     } catch (e) { setStatus(e instanceof Error ? e.message : 'Could not connect wallet.'); } finally { setPending(false); }
   }
   async function copyAddress() {
