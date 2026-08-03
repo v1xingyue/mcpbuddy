@@ -6,12 +6,12 @@ import { swapTransactions, walletBindings } from '@/lib/db/schema';
 import { env } from '@/lib/config';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 
-const JUPITER = 'https://lite-api.jup.ag/swap/v1';
+const JUPITER = 'https://api.jup.ag/swap/v1';
 type JupiterQuote = { inputMint: string; outputMint: string; inAmount: string; outAmount: string; otherAmountThreshold: string; priceImpactPct?: string; routePlan?: Array<{ swapInfo?: { label?: string } }> };
 type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 
-function headers(): Record<string, string> { return env.JUPITER_API_KEY ? { 'x-api-key': env.JUPITER_API_KEY } : {}; }
+function headers(): Record<string, string> { if (!env.JUPITER_API_KEY) throw new Error('JUPITER_API_KEY is required for Jupiter Swap API v1. Configure it server-side before creating a swap.'); return { 'x-api-key': env.JUPITER_API_KEY }; }
 function digest(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
 /** Returns the exact message bytes from a Solana wire transaction, without parsing/re-encoding it. */
 function wireMessage(serialized: string) {
@@ -44,7 +44,7 @@ function token(symbol: string) {
   return found;
 }
 
-function toAtomicAmount(value: string, decimals: number) {
+export function toAtomicAmount(value: string, decimals: number) {
   if (!/^\d+(?:\.\d+)?$/.test(value)) throw new Error('amount must be a positive decimal string, for example "0.1" or "25".');
   const [whole, fraction = ''] = value.split('.');
   if (fraction.length > decimals) throw new Error(`amount has more than ${decimals} decimal places for this token.`);
@@ -101,10 +101,10 @@ export async function createSwapForUser(userId: string, args: { inputToken: stri
   // immutable and must be returned byte-for-byte by the wallet.
   const query = new URLSearchParams({ inputMint: input.mint, outputMint: output.mint, amount, slippageBps: String(args.slippageBps) });
   const quoteResponse = await fetch(`${JUPITER}/quote?${query}`, { headers: headers(), cache: 'no-store' });
-  if (!quoteResponse.ok) throw new Error(`Jupiter quote failed (${quoteResponse.status}).`);
+  if (!quoteResponse.ok) { const detail = (await quoteResponse.text()).slice(0, 2_000); throw new Error(`Jupiter quote failed (${quoteResponse.status}) for inputMint=${input.mint}, outputMint=${output.mint}, amount=${amount}, slippageBps=${args.slippageBps}.${detail ? ` Response: ${detail}` : ''}`); }
   const quote = await quoteResponse.json() as JupiterQuote;
   const buildResponse = await fetch(`${JUPITER}/swap`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers() }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: wallet.address, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, blockhashSlotsToExpiry: 150 }) });
-  if (!buildResponse.ok) throw new Error(`Jupiter transaction build failed (${buildResponse.status}).`);
+  if (!buildResponse.ok) { const detail = (await buildResponse.text()).slice(0, 2_000); throw new Error(`Jupiter transaction build failed (${buildResponse.status}).${detail ? ` Response: ${detail}` : ''}`); }
   const built = await buildResponse.json() as { swapTransaction?: string };
   if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction);

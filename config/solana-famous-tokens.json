@@ -14,7 +14,7 @@
   {
     "symbol": "USDT",
     "name": "Tether",
-    "mint": "Es9vMFrzaCERmJfrF4H2FYDUGNnNCKRrQkZ9p4M5f7p", "decimals": 6,
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "decimals": 6,
     "coingeckoId": "tether"
   },
   {
@@ -44,7 +44,7 @@
   {
     "symbol": "RAY",
     "name": "Raydium",
-    "mint": "4k3Dyjzvzp8eMZWUXbEE3U5g6ZHHf7cP1HjE4A5YfEZZ", "decimals": 6,
+    "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "decimals": 6,
     "coingeckoId": "raydium"
   },
   {
