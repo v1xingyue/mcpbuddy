@@ -77,8 +77,14 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
     pricesUsd(),
   ]);
+  // Some shared RPC tiers reject an owner-wide program scan but allow a mint-scoped
+  // lookup. Retry only our small allowlist, so a partial provider outage does not
+  // make all non-SOL assets disappear.
+  const tokenAccounts = legacyAccounts?.value ?? (await Promise.allSettled(
+    solanaAssets.filter(asset => asset.mint).map(asset => rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }])),
+  )).flatMap(result => result.status === 'fulfilled' ? result.value.value : []);
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
-  for (const account of legacyAccounts?.value ?? []) {
+  for (const account of tokenAccounts) {
     const token = account.account.data.parsed.info.tokenAmount;
     const mint = account.account.data.parsed.info.mint;
     const current = tokenAmounts.get(mint);

@@ -29,6 +29,21 @@ describe('getMainSolanaAssetBalances', () => {
     expect(assets).toEqual([expect.objectContaining({ symbol: 'SOL', balance: '2', valueUsd: 200 })]);
   });
 
+  it('falls back to mint-scoped token lookups when the owner-wide scan fails', async () => {
+    vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
+      if (!init?.body) return Response.json({ solana: { usd: 100 }, 'usd-coin': { usd: 1 } });
+      const request = JSON.parse(String(init.body)) as { method?: string; params?: unknown[] };
+      if (request.method === 'getBalance') return Response.json({ result: { value: 1_000_000_000 } });
+      const filter = request.params?.[1] as { programId?: string; mint?: string };
+      if (request.method === 'getTokenAccountsByOwner' && filter.programId) return Response.json({ error: { message: 'scan limited' } });
+      if (request.method === 'getTokenAccountsByOwner' && filter.mint === 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v') return Response.json({ result: { value: [{ account: { data: { parsed: { info: { mint: filter.mint, tokenAmount: { amount: '2500000', decimals: 6 } } } } } }] } });
+      return Response.json({ result: { value: [] } });
+    }));
+    const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example');
+    expect(assets.map(asset => asset.symbol)).toEqual(['SOL', 'USDC']);
+    expect(assets.find(asset => asset.symbol === 'USDC')).toMatchObject({ balance: '2.5', valueUsd: 2.5 });
+  });
+
   it('loads the famous-token list from the JSON configuration', () => {
     expect(solanaAssets.map(asset => asset.symbol)).toEqual(['SOL', 'USDC', 'USDT', 'wSOL', 'JUP', 'JTO', 'PYTH', 'RAY', 'WIF', 'BONK']);
   });
