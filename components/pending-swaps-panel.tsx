@@ -12,11 +12,6 @@ type Provider = {
 function decode(value: string) { const binary = atob(value); return Uint8Array.from(binary, char => char.charCodeAt(0)); }
 function encode(value: Uint8Array) { let binary = ''; for (const byte of value) binary += String.fromCharCode(byte); return btoa(binary); }
 function short(value: string) { return `${value.slice(0, 5)}…${value.slice(-4)}`; }
-function messageBytes(serialized: string) {
-  const bytes = decode(serialized); let signatures = 0; let shift = 0; let offset = 0;
-  for (;;) { const byte = bytes[offset++]; signatures |= (byte & 0x7f) << shift; if ((byte & 0x80) === 0) break; shift += 7; }
-  return bytes.slice(offset + signatures * 64);
-}
 
 export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; autoSignId?: string }) {
   const [status, setStatus] = useState(''); const [pending, setPending] = useState(false);
@@ -24,13 +19,6 @@ export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; aut
   const records = swaps.map(swap => ({ ...swap, summary: JSON.parse(swap.summary) as Summary }));
   async function submitSignedTransaction(record: (typeof records)[number], signed: VersionedTransaction) {
     const signedTransaction = encode(signed.serialize());
-    // Fail locally before sending a changed transaction. The server repeats this
-    // exact check and is the final authority before anything is broadcast.
-    const reviewed = messageBytes(record.serializedTransaction);
-    const returned = messageBytes(signedTransaction);
-    if (reviewed.length !== returned.length || reviewed.some((byte, index) => byte !== returned[index])) {
-      throw new Error('Wallet returned a different transaction than the one reviewed. Nothing was broadcast. Delete this item and create a fresh swap; do not approve a replacement transaction.');
-    }
     const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preSignTransaction: record.serializedTransaction, signedTransaction }) });
     const body = await response.json() as { signature?: string; error?: string };
     if (!response.ok || !body.signature) throw new Error(body.error ?? 'Submission failed.');

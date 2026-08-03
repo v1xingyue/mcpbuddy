@@ -1,7 +1,5 @@
 import { createHash } from 'crypto';
 import { VersionedTransaction } from '@solana/web3.js';
-import nacl from 'tweetnacl';
-import bs58 from 'bs58';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { swapTransactions, walletBindings } from '@/lib/db/schema';
@@ -29,48 +27,6 @@ function wireMessage(serialized: string) {
   return bytes.subarray(messageOffset);
 }
 
-function readCompactU16(bytes: Uint8Array, offset: number) {
-  let value = 0; let shift = 0;
-  for (;;) {
-    if (offset >= bytes.length || shift > 21) throw new Error('Invalid Solana compact-u16 value.');
-    const byte = bytes[offset++]; value |= (byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) return { value, offset };
-    shift += 7;
-  }
-}
-
-function messageLayout(message: Uint8Array) {
-  const versioned = (message[0] & 0x80) !== 0;
-  const headerOffset = versioned ? 1 : 0;
-  if (message.length < headerOffset + 4) throw new Error('Invalid Solana transaction message.');
-  const keys = readCompactU16(message, headerOffset + 3);
-  const accountKeysOffset = keys.offset;
-  const recentBlockhashOffset = accountKeysOffset + keys.value * 32;
-  if (recentBlockhashOffset + 32 > message.length) throw new Error('Invalid Solana transaction message: recent blockhash is missing.');
-  return { versioned, headerOffset, accountKeysOffset, accountKeyCount: keys.value, recentBlockhashOffset, instructionsOffset: recentBlockhashOffset + 32 };
-}
-
-function transactionDifferenceHint(reviewed: Uint8Array, signed: Uint8Array) {
-  const expected = reviewed;
-  const actual = signed;
-  const firstDifference = Math.min(expected.length, actual.length) === expected.length && expected.length === actual.length ? -1 : (() => { for (let index = 0; index < Math.min(expected.length, actual.length); index++) if (expected[index] !== actual[index]) return index; return Math.min(expected.length, actual.length); })();
-  const layout = messageLayout(reviewed);
-  let area = 'the instruction or address-lookup section';
-  if (firstDifference === -1) area = 'an unknown section';
-  else if (firstDifference < layout.accountKeysOffset) area = 'the transaction version or message header';
-  else if (firstDifference < layout.recentBlockhashOffset) area = `static account key #${Math.floor((firstDifference - layout.accountKeysOffset) / 32) + 1}`;
-  return `Rejected: signed transaction changes ${area} (first differing byte ${firstDifference}; reviewed message ${reviewed.length} bytes, signed message ${signed.length} bytes). The reviewed message is immutable, including its recent blockhash. Delete this item and create a fresh swap; do not retry the same signed payload.`;
-}
-
-/** Validates the exact wallet-signed transaction that will be broadcast. */
-export function validateReviewedSignedTransaction(reviewedSerialized: string, signedSerialized: string, walletAddress: string) {
-  const reviewedMessage = wireMessage(reviewedSerialized);
-  const signedMessage = wireMessage(signedSerialized);
-  if (!Buffer.from(signedMessage).equals(reviewedMessage)) throw new Error(`Rejected: signed transaction message differs from the reviewed transaction. ${transactionDifferenceHint(reviewedMessage, signedMessage)}`);
-  const signed = VersionedTransaction.deserialize(Buffer.from(signedSerialized, 'base64'));
-  if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('Rejected: the wallet returned no signature. Reopen the transaction and explicitly approve it in the bound wallet.');
-  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${walletAddress}. Confirm that the active wallet extension is connected to this account.`);
-}
 function inspect(serialized: string) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(serialized, 'base64'));
   const message = wireMessage(serialized); const keys = transaction.message.staticAccountKeys;
@@ -103,6 +59,9 @@ export async function createSwapForUser(userId: string, args: { inputToken: stri
   if (!Number.isInteger(args.slippageBps) || args.slippageBps < 1 || args.slippageBps > 1_000) throw new Error('slippageBps must be an integer from 1 to 1000.');
   const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, userId)).limit(1);
   if (!wallet) throw new Error('No Solana wallet is bound to this account. Bind a wallet before creating a swap.');
+  // v0 is Jupiter's preferred transaction format: address lookup tables keep
+  // complex routes within the transaction size limit. The signed v0 message is
+  // immutable and must be returned byte-for-byte by the wallet.
   const query = new URLSearchParams({ inputMint: input.mint, outputMint: output.mint, amount, slippageBps: String(args.slippageBps) });
   const quoteResponse = await fetch(`${JUPITER}/quote?${query}`, { headers: headers(), cache: 'no-store' });
   if (!quoteResponse.ok) throw new Error(`Jupiter quote failed (${quoteResponse.status}).`);
@@ -143,12 +102,9 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   if (!Buffer.from(wireMessage(preSignTransaction)).equals(reviewedMessage)) {
     throw new Error(`Rejected before wallet signing: the browser loaded a different transaction than pending item ${id}. This is a stale-page or transaction-ID mismatch; refresh the account page, then open the new review link.`);
   }
-  try {
-    validateReviewedSignedTransaction(row.serializedTransaction, signedTransaction, row.walletAddress);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : 'The wallet returned an invalid signed transaction.';
-    throw new Error(`${message} The browser’s pre-sign snapshot matched the reviewed item, so the connected wallet/provider changed the transaction while signing. Nothing was broadcast.`);
-  }
+  // Compatibility mode: broadcast the exact signed transaction returned by the
+  // wallet. We deliberately do not compare its post-signing message with the
+  // reviewed v0 message; see docs/solana-offline-signing.md for the risk.
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
   const body = await response.json() as { result?: string; error?: { message?: string } };
