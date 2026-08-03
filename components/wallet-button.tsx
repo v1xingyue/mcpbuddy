@@ -5,7 +5,7 @@ import { Check, Copy } from 'lucide-react';
 import { bindWallet, createWalletChallenge } from '@/app/actions';
 
 type SolanaProvider = { connect(): Promise<{ publicKey: { toString(): string } }>; signMessage(message: Uint8Array): Promise<{ signature: Uint8Array }> };
-export function WalletButton({ address }: { address?: string }) {
+export function WalletButton({ address, disabled = false }: { address?: string; disabled?: boolean }) {
   const router = useRouter();
   const [value, setValue] = useState(address); const [status, setStatus] = useState(''); const [pending, setPending] = useState(false); const [copied, setCopied] = useState(false);
   async function connect() {
@@ -26,5 +26,5 @@ export function WalletButton({ address }: { address?: string }) {
     } catch { setStatus('Could not copy the wallet address.'); }
   }
   const label = value ? `${value.slice(0, 5)}…${value.slice(-4)}` : 'Bind Solana wallet';
-  return <div className="wallet-control"><button className={value ? 'wallet wallet-address ui-interactive-card' : 'wallet'} onClick={value ? () => void copyAddress() : connect} disabled={pending} aria-label={value ? `Copy Solana wallet address ${value}` : 'Bind Solana wallet'} title={value ? `Copy ${value}` : undefined}>{pending ? 'Waiting for wallet…' : value ? <><span>{label}</span><span className="wallet-copy-action">{copied ? <Check size={13} strokeWidth={2.4} aria-hidden="true" /> : <Copy size={13} strokeWidth={2} aria-hidden="true" />}{copied ? 'Copied' : 'Copy'}</span></> : 'Bind Solana wallet'}</button>{status && <p className="note" role="status">{status}</p>}</div>;
+  return <div className="wallet-control"><button className={value ? 'wallet wallet-address ui-interactive-card' : 'wallet'} onClick={value ? () => void copyAddress() : connect} disabled={pending || disabled} aria-label={value ? `Copy Solana wallet address ${value}` : 'Bind Solana wallet'} title={value ? `Copy ${value}` : undefined}>{pending ? 'Waiting for wallet…' : value ? <><span>{label}</span><span className="wallet-copy-action">{copied ? <Check size={13} strokeWidth={2.4} aria-hidden="true" /> : <Copy size={13} strokeWidth={2} aria-hidden="true" />}{copied ? 'Copied' : 'Copy'}</span></> : 'Bind Solana wallet'}</button>{status && <p className="note" role="status">{status}</p>}</div>;
 }

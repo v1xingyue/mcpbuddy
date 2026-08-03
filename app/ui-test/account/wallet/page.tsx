@@ -12,11 +12,11 @@ const fixtureAssets = [
 export default function LocalWalletVisualFixture() {
   if (!isLocalUiTestMode()) notFound();
 
-  return <AppShell active="account" name="Visual test account">
+  return <AppShell active="account" name="Visual test account" visualTestMode>
     <div className="account-layout">
       <div className="account-content">
         <header className="app-page-head"><p className="eyebrow">ACCOUNT · WALLET</p><h1>Wallet</h1><p>Review your Mainnet portfolio and every transaction before your wallet signs it.</p></header>
-        <WalletAssetsPanel address="Dyfmb11111111111111111111111111111111111111" assets={fixtureAssets} />
+        <WalletAssetsPanel address="Dyfmb11111111111111111111111111111111111111" assets={fixtureAssets} readOnly />
       </div>
     </div>
   </AppShell>;
