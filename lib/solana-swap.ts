@@ -55,10 +55,9 @@ export async function createSwapForUser(userId: string, args: { inputToken: stri
   const details = inspect(built.swapTransaction);
   if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
   const summary: SigningSummary = { kind: 'swap', inputToken: input.symbol, outputToken: output.symbol, inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
-  // A Jupiter transaction's recent blockhash is normally valid for roughly one
-  // minute. Do not advertise a longer review window: some wallets refresh an
-  // expired blockhash before signing, which correctly fails our immutable-message check.
-  const expiresAt = new Date(Date.now() + 45_000);
+  // This is the review-record lifetime. The actual recent blockhash has a much
+  // shorter life; the UI refreshes the transaction before signing when needed.
+  const expiresAt = new Date(Date.now() + 5 * 60_000);
   const [row] = await getDb().insert(swapTransactions).values({ userId, walletAddress: wallet.address, serializedTransaction: built.swapTransaction, messageBase64: details.messageBase64, transactionDigest: details.transactionDigest, summary: JSON.stringify(summary), expiresAt }).returning({ id: swapTransactions.id });
   return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
 }
@@ -80,6 +79,7 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   if (!row) throw new Error('Swap transaction not found.');
   if (row.status !== 'awaiting_signature') throw new Error(`This transaction is already ${row.status}.`);
   if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
+  if (Date.now() - row.createdAt.getTime() > 45_000) throw new Error('This signing payload is no longer current. Refresh the quote, review the new transaction, then sign it.');
   const signed = VersionedTransaction.deserialize(Buffer.from(signedTransaction, 'base64'));
   if (Buffer.from(signed.message.serialize()).toString('base64') !== row.messageBase64) throw new Error('Rejected: signed transaction message differs from the reviewed transaction.');
   if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('The wallet did not add a signature.');
@@ -89,4 +89,18 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   if (!response.ok || body.error || !body.result) { const message = body.error?.message ?? `RPC submission failed (${response.status}).`; await getDb().update(swapTransactions).set({ error: message }).where(eq(swapTransactions.id, row.id)); throw new Error(message); }
   await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
   return body.result;
+}
+
+/** Requotes an old pending item without extending its five-minute review window. */
+export async function refreshSwapForUser(userId: string, id: string) {
+  const [row] = await getDb().select({ id: swapTransactions.id, summary: swapTransactions.summary, status: swapTransactions.status, expiresAt: swapTransactions.expiresAt })
+    .from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
+  if (!row) throw new Error('Swap transaction not found.');
+  if (row.status !== 'awaiting_signature') throw new Error(`Only an unsigned transaction can be refreshed; this one is ${row.status}.`);
+  if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
+  const summary = JSON.parse(row.summary) as Partial<SigningSummary>;
+  if (!summary.inputToken || !summary.outputToken || !summary.inputAmount || !summary.slippageBps) throw new Error('The saved swap details are incomplete. Request a fresh quote and transaction.');
+  const refreshed = await createSwapForUser(userId, { inputToken: summary.inputToken, outputToken: summary.outputToken, amount: summary.inputAmount, slippageBps: summary.slippageBps });
+  await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
+  return refreshed;
 }

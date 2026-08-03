@@ -19,10 +19,21 @@ export function PendingSwapsPanel({ swaps }: { swaps: Pending[] }) {
     if (!response.ok || !body.signature) throw new Error(body.error ?? 'Submission failed.');
     return body.signature;
   }
+  async function refresh(record: (typeof records)[number]) {
+    const response = await fetch(`/api/swaps/${record.id}/refresh`, { method: 'POST' });
+    const body = await response.json() as { error?: string };
+    if (!response.ok) throw new Error(body.error ?? 'Could not refresh the transaction.');
+  }
   async function signOne(record: (typeof records)[number]) {
     try {
       setPending(true); setStatus('Opening your wallet to review this transaction…');
       if (new Date(record.expiresAt) <= new Date()) throw new Error('This transaction has expired. Ask your AI client to create a fresh quote.');
+      if (Date.now() - new Date(record.createdAt).getTime() > 30_000) {
+        await refresh(record);
+        setStatus('A fresh quote is ready. Review its updated route and minimum received amount, then select Review & sign again.');
+        window.setTimeout(() => window.location.reload(), 800);
+        return;
+      }
       const provider = (window as Window & { solana?: Provider }).solana;
       if (!provider?.signTransaction) throw new Error('This wallet does not support signing a transaction.');
       const signature = await submit(record, await provider.signTransaction(VersionedTransaction.deserialize(decode(record.serializedTransaction))));
@@ -36,6 +47,13 @@ export function PendingSwapsPanel({ swaps }: { swaps: Pending[] }) {
       if (!provider?.signAllTransactions) throw new Error('This wallet does not support batch signing. Use single-transaction approval instead.');
       const active = records.filter(record => new Date(record.expiresAt) > new Date());
       if (!active.length) throw new Error('All pending transactions have expired. Ask your AI client to create fresh quotes.');
+      const stale = active.filter(record => Date.now() - new Date(record.createdAt).getTime() > 30_000);
+      if (stale.length) {
+        await Promise.all(stale.map(refresh));
+        setStatus('Fresh quotes are ready. Review their updated details, then select Review & sign all again.');
+        window.setTimeout(() => window.location.reload(), 800);
+        return;
+      }
       const signed = await provider.signAllTransactions(active.map(record => VersionedTransaction.deserialize(decode(record.serializedTransaction))));
       const signatures = await Promise.all(signed.map((transaction, index) => submit(active[index], transaction)));
       setStatus(`${signatures.length} swap${signatures.length === 1 ? '' : 's'} submitted. ${signatures.map(short).join(', ')}`); window.setTimeout(() => window.location.reload(), 1_500);
