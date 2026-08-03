@@ -10,6 +10,7 @@ import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
+import { publicHtmlBlobPath, publicHtmlSchema } from '@/lib/public-html';
 import { createSwapForUser, createSwapByMintForUser, createTokenTransferForUser, quoteableSolanaSwapTokens, swapStatusForUser } from '@/lib/solana-swap';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
@@ -245,6 +246,36 @@ const handler = createMcpHandler(
         const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun';
         const pageUrl = isPublic ? `${origin}/p/${page.publicId}` : `${origin}/pages/${page.id}`;
         return { content: [{ type: 'text', text: isPublic ? `Published public page: ${pageUrl}` : `Published private page. Open it from your MCPBuddy dashboard: ${pageUrl}` }] };
+      },
+    );
+    server.registerTool(
+      'publish_html',
+      {
+        title: 'Publish HTML',
+        description: 'Publish one complete HTML document to an isolated public URL. The returned link is publicly accessible: do not include secrets, private account data, or reusable credentials.',
+        inputSchema: { html: publicHtmlSchema.describe('A complete standalone HTML document, including <html> and </html>. Maximum 1 MB.') },
+        outputSchema: { url: z.string().url() },
+      },
+      async ({ html }, extra) => {
+        try {
+          const user = await currentUser(extra.authInfo?.extra?.githubId);
+          if (!env.BLOB_READ_WRITE_TOKEN) {
+            return { content: [{ type: 'text', text: 'Public HTML publishing is not configured. Set BLOB_READ_WRITE_TOKEN before using publish_html.' }], isError: true };
+          }
+          const blob = await put(publicHtmlBlobPath(user.id, randomUUID()), html, {
+            access: 'public',
+            addRandomSuffix: false,
+            contentType: 'text/html; charset=utf-8',
+            token: env.BLOB_READ_WRITE_TOKEN,
+          });
+          return {
+            content: [{ type: 'text', text: `Published public HTML: ${blob.url}` }],
+            structuredContent: { url: blob.url },
+          };
+        } catch {
+          // Provider errors can contain implementation details; never surface them to an MCP client.
+          return { content: [{ type: 'text', text: 'Could not publish the HTML document. Please try again.' }], isError: true };
+        }
       },
     );
     server.tool(

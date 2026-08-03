@@ -26,6 +26,9 @@ export const CONTEXT_PACK_TEMPLATE = `# AI Context Pack
 ## Tool guidance
 ### publish_page
 - Confirm before publishing publicly.
+
+### publish_html
+- Confirm before publishing. The returned Blob URL is public and HTML can run scripts in its isolated Blob origin.
 - Use a clear title and concise slug.
 `;
 
