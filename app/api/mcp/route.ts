@@ -10,7 +10,7 @@ import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
-import { createSwapForUser, createTokenTransferForUser, quoteableSolanaSwapTokens } from '@/lib/solana-swap';
+import { createSwapForUser, createSwapByMintForUser, createTokenTransferForUser, quoteableSolanaSwapTokens } from '@/lib/solana-swap';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -139,10 +139,10 @@ const handler = createMcpHandler(
     );
     server.tool(
       'list_solana_swap_tokens',
-      'List configured Solana assets currently quoteable by Jupiter against SOL. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
-      {},
-      async () => {
-        try { const tokens = await quoteableSolanaSwapTokens(); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), quotePair: 'SOL', tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
+      'List configured Solana assets currently quoteable by Jupiter from the supplied input token and amount. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
+      { inputToken: z.string().min(1).max(20).default('USDC').describe('Input token symbol used for live route validation; defaults to USDC.'), amount: z.string().regex(/^\d+(\.\d+)?$/).default('1').describe('Human-readable input amount used for live route validation; defaults to 1.') },
+      async ({ inputToken, amount }) => {
+        try { const tokens = await quoteableSolanaSwapTokens(inputToken, amount); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), inputToken, amount, tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
         catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not validate Jupiter token routes.' }], isError: true }; }
       },
     );
@@ -177,6 +177,9 @@ const handler = createMcpHandler(
         }
       },
     );
+    server.registerTool('create_solana_swap_by_mint', { title: 'Create Solana swap by mint', description: 'Create an unsigned Jupiter swap using arbitrary Solana mints. amount is an atomic integer, not a display decimal; for example 0.5 USDC is 500000.', inputSchema: { inputMint: z.string().min(32).max(64), outputMint: z.string().min(32).max(64), amount: z.string().regex(/^\d+$/).describe('Positive atomic token amount.'), slippageBps: z.number().int().min(1).max(1000).default(50) }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI, 'ui/resourceUri': SWAP_REVIEW_UI_URI } }, async (args, extra) => {
+      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await createSwapByMintForUser(user.id, args); const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'; const reviewUrl = `${origin}/account?swap=${result.transactionId}`; return { content: [{ type: 'text', text: `Unsigned mint-to-mint swap created. Atomic input amount: ${args.amount}. Open ${reviewUrl} to review and sign.` }], structuredContent: { ...result, reviewUrl, signingRequired: true }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI } }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create mint-based swap.' }], isError: true }; }
+    });
     server.tool(
       'user_info',
       'Read the current user’s private AI Context Pack before starting work. It contains their profile, working preferences, hard limits, current goals, project notes, and tool guidance.',
