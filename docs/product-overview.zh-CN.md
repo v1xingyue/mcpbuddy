@@ -32,7 +32,7 @@ MCPBuddy 是一个面向个人创作者和 AI 工作流的 MCP 连接中心。�
 | --- | --- |
 | `hello` | 接收来自 Grok、ChatGPT 或 Claude 的问候，并记录该平台连接已验证。 |
 | `get_wallet_address` | 返回当前已绑定账户的 Solana 钱包地址。 |
-| `get_solana_asset_balances` | 查询绑定钱包中配置的知名代币列表及当前账户白名单代币的余额、USD 价格及 USD 估值；默认包含 SOL、USDC、USDT、wSOL、JUP、JTO、PYTH、RAY、WIF、BONK。白名单代币按账户隔离，仅在余额非零时返回，且可能没有 USD 价格。 |
+| `get_solana_asset_balances` | 查询绑定钱包中配置的知名代币列表及当前账户白名单代币的余额、USD 价格及 USD 估值；默认包含 SOL、USDC、USDT、wSOL、JUP、JTO、PYTH、RAY、WIF、BONK。白名单代币按账户隔离，仅在余额非零时返回；若 CoinGecko 无报价，会通过 Jupiter 只读查询 1 个代币兑换 USDC 的可执行路由（例如 1 SPACEX → 90.14 USDC），不会创建、签名或提交交易。 |
 | `list_solana_swap_tokens` | 查询当前账户可由 Jupiter 报价的配置代币和白名单代币；白名单代币会先解析精确小数位，随后可作为按 symbol 的 swap 或 transfer 工具输入。 |
 | `publish_page` | 将 Markdown 内容发布为公开页或仅自己可见的私有页。 |
 | `list_pages` | 读取当前账户已发布的页面列表。 |

@@ -4,6 +4,9 @@ import famousTokensConfig from '@/config/solana-famous-tokens.json';
 const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
 const TOKEN_2022_PROGRAM_ID = 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb';
 const PUBLIC_FALLBACK_RPC_URL = 'https://solana-rpc.publicnode.com';
+const USDC_MINT = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
+const JUPITER_QUOTE_URL = 'https://api.jup.ag/swap/v1/quote';
+const MAX_JUPITER_PRICE_QUOTES = 25;
 
 const solanaAssetSchema = z.object({
   symbol: z.string().trim().min(1).max(20),
@@ -85,6 +88,22 @@ async function pricesUsd() {
   }
 }
 
+/** Quotes exactly one whole token to USDC through Jupiter; it never builds or signs a transaction. */
+async function jupiterUsdPrice(mint: string, decimals: number) {
+  if (mint === USDC_MINT) return 1;
+  try {
+    const amount = (10n ** BigInt(decimals)).toString();
+    const response = await fetch(`${JUPITER_QUOTE_URL}?${new URLSearchParams({ inputMint: mint, outputMint: USDC_MINT, amount, slippageBps: '50' })}`, { headers: process.env.JUPITER_API_KEY ? { 'x-api-key': process.env.JUPITER_API_KEY } : {}, cache: 'no-store' });
+    if (!response.ok) return null;
+    const quote = await response.json() as { outAmount?: unknown };
+    if (typeof quote.outAmount !== 'string' || !/^\d+$/.test(quote.outAmount)) return null;
+    const price = Number(displayAmount(quote.outAmount, 6));
+    return Number.isFinite(price) && price > 0 ? price : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Reads only configured famous Solana assets; it never requests signing authority. */
 export async function getMainSolanaPortfolio(address: string, rpcUrl: string, customAssets: SolanaAsset[] = []): Promise<SolanaPortfolio> {
   // SOL is the essential portfolio value. Token-program endpoints are frequently
@@ -120,13 +139,20 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
     const current = tokenAmounts.get(mint);
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
-  const configuredHoldings = trackedAssets.flatMap((asset) => {
+  const holdings = trackedAssets.flatMap((asset) => {
     const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value.value), decimals: 9 };
     if (!token || token.amount === 0n) return [];
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
-    const priceUsd = prices.get(asset.symbol) ?? null;
+    return [{ asset, token, balance }];
+  });
+  // Custom assets do not have a CoinGecko ID. For every unpriced tracked SPL
+  // holding (bounded to avoid turning a watchlist into a quote fan-out), quote
+  // one whole token into USDC through Jupiter's route engine.
+  const routePrices = new Map<string, number | null>(await Promise.all(holdings.filter(({ asset }) => Boolean(asset.mint) && (prices.get(asset.symbol) ?? null) === null).slice(0, MAX_JUPITER_PRICE_QUOTES).map(async ({ asset, token }) => [asset.mint!, await jupiterUsdPrice(asset.mint!, token.decimals)] as const)));
+  const configuredHoldings = holdings.map(({ asset, balance }) => {
+    const priceUsd = prices.get(asset.symbol) ?? (asset.mint ? routePrices.get(asset.mint) ?? null : null);
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
-    return [{ symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd }];
+    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd };
   });
   return {
     // Do not surface arbitrary dust/spam tokens. Only global defaults and the

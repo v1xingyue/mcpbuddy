@@ -55,6 +55,21 @@ describe('getMainSolanaAssetBalances', () => {
     expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'CUSTOM', mint: customMint, balance: '1.234567', priceUsd: null, valueUsd: null })]));
   });
 
+  it('prices a user-whitelisted token from its Jupiter USDC route', async () => {
+    const customMint = '11111111111111111111111111111111111111112';
+    vi.stubGlobal('fetch', vi.fn(async (input: string | URL | Request, init?: RequestInit) => {
+      const url = String(input);
+      if (url.startsWith('https://api.jup.ag/')) return Response.json({ outAmount: '90140000' });
+      if (!init?.body) return Response.json({ solana: { usd: 100 } });
+      const request = JSON.parse(String(init.body)) as { method?: string };
+      if (request.method === 'getBalance') return Response.json({ result: { value: 0 } });
+      if (request.method === 'getTokenAccountsByOwner') return Response.json({ result: { value: [{ pubkey: 'custom-token-account', account: { data: { parsed: { info: { mint: customMint, tokenAmount: { amount: '2000000', decimals: 6 } } } } } }] } });
+      return Response.json({});
+    }));
+    const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example', [{ symbol: 'SPACEX', name: 'SpaceX', mint: customMint, decimals: 0, coingeckoId: '' }]);
+    expect(assets.find(asset => asset.symbol === 'SPACEX')).toMatchObject({ balance: '2', priceUsd: 90.14, valueUsd: 180.28 });
+  });
+
   it('uses a mint-scoped lookup when an owner-wide scan returns empty', async () => {
     const usdcMint = 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v';
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
