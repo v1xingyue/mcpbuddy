@@ -29,29 +29,6 @@ function wireMessage(serialized: string) {
   return bytes.subarray(messageOffset);
 }
 
-function signatureArea(serialized: string) {
-  const bytes = Buffer.from(serialized, 'base64');
-  let count = 0; let shift = 0; let offset = 0;
-  for (;;) {
-    if (offset >= bytes.length || shift > 21) throw new Error('Invalid Solana transaction signature prefix.');
-    const byte = bytes[offset++]; count |= (byte & 0x7f) << shift;
-    if ((byte & 0x80) === 0) break;
-    shift += 7;
-  }
-  const messageOffset = offset + count * 64;
-  if (count < 1 || messageOffset >= bytes.length) throw new Error('Invalid Solana transaction signature area.');
-  return { bytes, firstSignatureOffset: offset, message: bytes.subarray(messageOffset) };
-}
-
-/** Attach a detached fee-payer signature to the exact transaction the user reviewed. */
-export function attachDetachedSignature(serializedTransaction: string, messageSignature: Uint8Array, walletAddress: string) {
-  if (messageSignature.length !== 64) throw new Error(`Rejected: wallet returned a ${messageSignature.length}-byte message signature; Solana requires exactly 64 bytes.`);
-  const transaction = signatureArea(serializedTransaction);
-  if (!nacl.sign.detached.verify(transaction.message, messageSignature, bs58.decode(walletAddress))) throw new Error(`Rejected: this detached signature does not verify for bound wallet ${walletAddress} and the reviewed transaction message.`);
-  Buffer.from(messageSignature).copy(transaction.bytes, transaction.firstSignatureOffset);
-  return transaction.bytes.toString('base64');
-}
-
 function readCompactU16(bytes: Uint8Array, offset: number) {
   let value = 0; let shift = 0;
   for (;;) {
@@ -73,29 +50,26 @@ function messageLayout(message: Uint8Array) {
   return { versioned, headerOffset, accountKeysOffset, accountKeyCount: keys.value, recentBlockhashOffset, instructionsOffset: recentBlockhashOffset + 32 };
 }
 
-/**
- * Solana messages place the 32-byte recent blockhash directly after the static
- * account-key list. Wallets may legitimately replace that short-lived replay
- * protection value before signing. Zero only those 32 bytes, so every account,
- * instruction, amount, program, and lookup table remains byte-for-byte bound.
- */
-function normalizeMessageIgnoringRecentBlockhash(message: Uint8Array) {
-  const normalized = Buffer.from(message);
-  const layout = messageLayout(normalized);
-  normalized.fill(0, layout.recentBlockhashOffset, layout.instructionsOffset);
-  return normalized;
-}
-
 function transactionDifferenceHint(reviewed: Uint8Array, signed: Uint8Array) {
-  const expected = normalizeMessageIgnoringRecentBlockhash(reviewed);
-  const actual = normalizeMessageIgnoringRecentBlockhash(signed);
+  const expected = reviewed;
+  const actual = signed;
   const firstDifference = Math.min(expected.length, actual.length) === expected.length && expected.length === actual.length ? -1 : (() => { for (let index = 0; index < Math.min(expected.length, actual.length); index++) if (expected[index] !== actual[index]) return index; return Math.min(expected.length, actual.length); })();
   const layout = messageLayout(reviewed);
   let area = 'the instruction or address-lookup section';
   if (firstDifference === -1) area = 'an unknown section';
   else if (firstDifference < layout.accountKeysOffset) area = 'the transaction version or message header';
   else if (firstDifference < layout.recentBlockhashOffset) area = `static account key #${Math.floor((firstDifference - layout.accountKeysOffset) / 32) + 1}`;
-  return `Rejected: signed transaction changes ${area} (first differing byte ${firstDifference}; reviewed message ${reviewed.length} bytes, signed message ${signed.length} bytes). Only recentBlockhash may change. Delete this item and create a fresh swap; do not retry the same signed payload.`;
+  return `Rejected: signed transaction changes ${area} (first differing byte ${firstDifference}; reviewed message ${reviewed.length} bytes, signed message ${signed.length} bytes). The reviewed message is immutable, including its recent blockhash. Delete this item and create a fresh swap; do not retry the same signed payload.`;
+}
+
+/** Validates the exact wallet-signed transaction that will be broadcast. */
+export function validateReviewedSignedTransaction(reviewedSerialized: string, signedSerialized: string, walletAddress: string) {
+  const reviewedMessage = wireMessage(reviewedSerialized);
+  const signedMessage = wireMessage(signedSerialized);
+  if (!Buffer.from(signedMessage).equals(reviewedMessage)) throw new Error(`Rejected: signed transaction message differs from the reviewed transaction. ${transactionDifferenceHint(reviewedMessage, signedMessage)}`);
+  const signed = VersionedTransaction.deserialize(Buffer.from(signedSerialized, 'base64'));
+  if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('Rejected: the wallet returned no signature. Reopen the transaction and explicitly approve it in the bound wallet.');
+  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${walletAddress}. Confirm that the active wallet extension is connected to this account.`);
 }
 function inspect(serialized: string) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(serialized, 'base64'));
@@ -159,24 +133,22 @@ export async function deletePendingSwap(userId: string, id: string) {
   await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
 }
 
-export async function submitSignedSwap(userId: string, id: string, signedTransaction: string, preSignTransaction?: string) {
+export async function submitSignedSwap(userId: string, id: string, signedTransaction: string, preSignTransaction: string) {
   const [row] = await getDb().select().from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
   if (!row) throw new Error('Swap transaction not found.');
   if (row.status !== 'awaiting_signature') throw new Error(`This transaction is already ${row.status}.`);
   if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
   if (Date.now() - row.createdAt.getTime() > 45_000) throw new Error('This signing payload is no longer current. Refresh the quote, review the new transaction, then sign it.');
-  const signed = VersionedTransaction.deserialize(Buffer.from(signedTransaction, 'base64'));
-  const signedMessage = wireMessage(signedTransaction);
   const reviewedMessage = wireMessage(row.serializedTransaction);
-  if (preSignTransaction && !Buffer.from(wireMessage(preSignTransaction)).equals(reviewedMessage)) {
+  if (!Buffer.from(wireMessage(preSignTransaction)).equals(reviewedMessage)) {
     throw new Error(`Rejected before wallet signing: the browser loaded a different transaction than pending item ${id}. This is a stale-page or transaction-ID mismatch; refresh the account page, then open the new review link.`);
   }
-  if (!normalizeMessageIgnoringRecentBlockhash(signedMessage).equals(normalizeMessageIgnoringRecentBlockhash(reviewedMessage))) {
-    const source = preSignTransaction ? ' The browser’s pre-sign snapshot matched the reviewed item, so the connected wallet/provider changed the transaction while signing.' : '';
-    throw new Error(`${transactionDifferenceHint(reviewedMessage, signedMessage)}${source}`);
+  try {
+    validateReviewedSignedTransaction(row.serializedTransaction, signedTransaction, row.walletAddress);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'The wallet returned an invalid signed transaction.';
+    throw new Error(`${message} The browser’s pre-sign snapshot matched the reviewed item, so the connected wallet/provider changed the transaction while signing. Nothing was broadcast.`);
   }
-  if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('Rejected: the wallet returned no signature. Reopen the transaction and explicitly approve it in the bound wallet.');
-  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${row.walletAddress}. Confirm that the active wallet extension is connected to this account.`);
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
   const body = await response.json() as { result?: string; error?: { message?: string } };
@@ -184,27 +156,6 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
   return body.result;
 }
-
-/**
- * Detached offline signing: the wallet signs only the immutable Solana message.
- * The server verifies that signature, attaches it to the original wire transaction,
- * and broadcasts those exact reviewed bytes.
- */
-export async function submitDetachedSwapSignature(userId: string, id: string, messageSignature: string) {
-  const [row] = await getDb().select().from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
-  if (!row) throw new Error('Swap transaction not found.');
-  if (row.status !== 'awaiting_signature') throw new Error(`This transaction is already ${row.status}.`);
-  if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
-  if (Date.now() - row.createdAt.getTime() > 45_000) throw new Error('This signing payload is no longer current. Refresh the quote, review the new transaction, then sign it.');
-  const rawTransaction = attachDetachedSignature(row.serializedTransaction, Buffer.from(messageSignature, 'base64'), row.walletAddress);
-  const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
-  const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [rawTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
-  const body = await response.json() as { result?: string; error?: { message?: string } };
-  if (!response.ok || body.error || !body.result) { const message = body.error?.message ?? `RPC submission failed (${response.status}).`; await getDb().update(swapTransactions).set({ error: message }).where(eq(swapTransactions.id, row.id)); throw new Error(message); }
-  await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
-  return body.result;
-}
-
 
 /** Requotes an old pending item without extending its five-minute review window. */
 export async function refreshSwapForUser(userId: string, id: string) {

@@ -1,12 +1,9 @@
 import { z } from 'zod';
 import { provisionUser } from '@/app/actions';
-import { submitDetachedSwapSignature, submitSignedSwap } from '@/lib/solana-swap';
+import { submitSignedSwap } from '@/lib/solana-swap';
 import { deletePendingSwap } from '@/lib/solana-swap';
 
-const bodySchema = z.union([
-  z.object({ messageSignature: z.string().min(80).max(120) }),
-  z.object({ signedTransaction: z.string().min(20), preSignTransaction: z.string().min(20) }),
-]);
+const bodySchema = z.object({ signedTransaction: z.string().min(20), preSignTransaction: z.string().min(20) });
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const user = await provisionUser();
@@ -14,9 +11,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   try {
     const body = bodySchema.parse(await request.json());
     const { id } = await params;
-    const signature = 'messageSignature' in body
-      ? await submitDetachedSwapSignature(user.id, id, body.messageSignature)
-      : await submitSignedSwap(user.id, id, body.signedTransaction, body.preSignTransaction);
+    const signature = await submitSignedSwap(user.id, id, body.signedTransaction, body.preSignTransaction);
     return Response.json({ signature });
   } catch (error) {
     return Response.json({ error: error instanceof Error ? error.message : 'Could not submit swap.' }, { status: 400 });

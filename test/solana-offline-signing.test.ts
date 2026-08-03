@@ -1,10 +1,9 @@
 import { describe, expect, it } from 'vitest';
 import { Keypair, SystemProgram, TransactionMessage, VersionedTransaction } from '@solana/web3.js';
 import nacl from 'tweetnacl';
-import { attachDetachedSignature } from '@/lib/solana-swap';
+import { validateReviewedSignedTransaction } from '@/lib/solana-swap';
 
-function unsignedTransaction() {
-  const payer = Keypair.generate();
+function unsignedTransaction(payer = Keypair.generate()) {
   const recipient = Keypair.generate();
   const message = new TransactionMessage({
     payerKey: payer.publicKey,
@@ -14,21 +13,29 @@ function unsignedTransaction() {
   return { payer, transaction: new VersionedTransaction(message) };
 }
 
-describe('detached Solana transaction signing', () => {
-  it('attaches only a verified signature to the original reviewed wire transaction', () => {
+describe('reviewed Solana transaction signing', () => {
+  it('accepts a wallet signature for the exact reviewed message', () => {
     const { payer, transaction } = unsignedTransaction();
     const unsigned = Buffer.from(transaction.serialize()).toString('base64');
-    const signature = nacl.sign.detached(transaction.message.serialize(), payer.secretKey);
-    const signed = attachDetachedSignature(unsigned, signature, payer.publicKey.toBase58());
-    const restored = VersionedTransaction.deserialize(Buffer.from(signed, 'base64'));
-    expect(Buffer.from(restored.message.serialize())).toEqual(Buffer.from(transaction.message.serialize()));
-    expect(Array.from(restored.signatures[0])).toEqual(Array.from(signature));
+    transaction.sign([payer]);
+    const signed = Buffer.from(transaction.serialize()).toString('base64');
+    expect(() => validateReviewedSignedTransaction(unsigned, signed, payer.publicKey.toBase58())).not.toThrow();
   });
 
   it('rejects a signature from a wallet other than the reviewed fee payer', () => {
     const { payer, transaction } = unsignedTransaction();
     const unsigned = Buffer.from(transaction.serialize()).toString('base64');
-    const wrongSignature = nacl.sign.detached(transaction.message.serialize(), Keypair.generate().secretKey);
-    expect(() => attachDetachedSignature(unsigned, wrongSignature, payer.publicKey.toBase58())).toThrow('does not verify');
+    transaction.signatures[0] = nacl.sign.detached(transaction.message.serialize(), Keypair.generate().secretKey);
+    const signed = Buffer.from(transaction.serialize()).toString('base64');
+    expect(() => validateReviewedSignedTransaction(unsigned, signed, payer.publicKey.toBase58())).toThrow('does not verify');
+  });
+
+  it('rejects a signed transaction with a changed reviewed message', () => {
+    const { payer, transaction } = unsignedTransaction();
+    const reviewed = Buffer.from(transaction.serialize()).toString('base64');
+    const other = unsignedTransaction(payer).transaction;
+    other.sign([payer]);
+    const signed = Buffer.from(other.serialize()).toString('base64');
+    expect(() => validateReviewedSignedTransaction(reviewed, signed, payer.publicKey.toBase58())).toThrow('message differs');
   });
 });
