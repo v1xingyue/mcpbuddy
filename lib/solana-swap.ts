@@ -28,6 +28,52 @@ function wireMessage(serialized: string) {
   if (messageOffset >= bytes.length) throw new Error('Invalid Solana transaction: message is missing.');
   return bytes.subarray(messageOffset);
 }
+
+function readCompactU16(bytes: Uint8Array, offset: number) {
+  let value = 0; let shift = 0;
+  for (;;) {
+    if (offset >= bytes.length || shift > 21) throw new Error('Invalid Solana compact-u16 value.');
+    const byte = bytes[offset++]; value |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) return { value, offset };
+    shift += 7;
+  }
+}
+
+function messageLayout(message: Uint8Array) {
+  const versioned = (message[0] & 0x80) !== 0;
+  const headerOffset = versioned ? 1 : 0;
+  if (message.length < headerOffset + 4) throw new Error('Invalid Solana transaction message.');
+  const keys = readCompactU16(message, headerOffset + 3);
+  const accountKeysOffset = keys.offset;
+  const recentBlockhashOffset = accountKeysOffset + keys.value * 32;
+  if (recentBlockhashOffset + 32 > message.length) throw new Error('Invalid Solana transaction message: recent blockhash is missing.');
+  return { versioned, headerOffset, accountKeysOffset, accountKeyCount: keys.value, recentBlockhashOffset, instructionsOffset: recentBlockhashOffset + 32 };
+}
+
+/**
+ * Solana messages place the 32-byte recent blockhash directly after the static
+ * account-key list. Wallets may legitimately replace that short-lived replay
+ * protection value before signing. Zero only those 32 bytes, so every account,
+ * instruction, amount, program, and lookup table remains byte-for-byte bound.
+ */
+function normalizeMessageIgnoringRecentBlockhash(message: Uint8Array) {
+  const normalized = Buffer.from(message);
+  const layout = messageLayout(normalized);
+  normalized.fill(0, layout.recentBlockhashOffset, layout.instructionsOffset);
+  return normalized;
+}
+
+function transactionDifferenceHint(reviewed: Uint8Array, signed: Uint8Array) {
+  const expected = normalizeMessageIgnoringRecentBlockhash(reviewed);
+  const actual = normalizeMessageIgnoringRecentBlockhash(signed);
+  const firstDifference = Math.min(expected.length, actual.length) === expected.length && expected.length === actual.length ? -1 : (() => { for (let index = 0; index < Math.min(expected.length, actual.length); index++) if (expected[index] !== actual[index]) return index; return Math.min(expected.length, actual.length); })();
+  const layout = messageLayout(reviewed);
+  let area = 'the instruction or address-lookup section';
+  if (firstDifference === -1) area = 'an unknown section';
+  else if (firstDifference < layout.accountKeysOffset) area = 'the transaction version or message header';
+  else if (firstDifference < layout.recentBlockhashOffset) area = `static account key #${Math.floor((firstDifference - layout.accountKeysOffset) / 32) + 1}`;
+  return `Rejected: signed transaction changes ${area} (first differing byte ${firstDifference}; reviewed message ${reviewed.length} bytes, signed message ${signed.length} bytes). Only recentBlockhash may change. Delete this item and create a fresh swap; do not retry the same signed payload.`;
+}
 function inspect(serialized: string) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(serialized, 'base64'));
   const message = wireMessage(serialized); const keys = transaction.message.staticAccountKeys;
@@ -99,9 +145,9 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   const signed = VersionedTransaction.deserialize(Buffer.from(signedTransaction, 'base64'));
   const signedMessage = wireMessage(signedTransaction);
   const reviewedMessage = wireMessage(row.serializedTransaction);
-  if (!Buffer.from(signedMessage).equals(reviewedMessage)) throw new Error('Rejected: signed transaction message differs from the reviewed transaction.');
-  if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('The wallet did not add a signature.');
-  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error('Rejected: the bound wallet did not sign this transaction message.');
+  if (!normalizeMessageIgnoringRecentBlockhash(signedMessage).equals(normalizeMessageIgnoringRecentBlockhash(reviewedMessage))) throw new Error(transactionDifferenceHint(reviewedMessage, signedMessage));
+  if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('Rejected: the wallet returned no signature. Reopen the transaction and explicitly approve it in the bound wallet.');
+  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${row.walletAddress}. Confirm that the active wallet extension is connected to this account.`);
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
   const body = await response.json() as { result?: string; error?: { message?: string } };
