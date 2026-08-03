@@ -76,15 +76,31 @@ const SWAP_REVIEW_UI = `<!doctype html>
       const result = asObject(output.result);
       if (result.transactionId) return result;
     }
+    // ChatGPT may re-mount an App card after the transient tool result has
+    // been discarded. widgetState belongs to this card instance and survives
+    // that re-mount, unlike a page-global browser cache.
+    const saved = asObject(window.openai?.widgetState);
+    const transaction = asObject(saved.transaction);
+    if (transaction.transactionId) return transaction;
     return {};
+  }
+  function saveOutput(data) {
+    if (!data.transactionId || !window.openai?.setWidgetState) return;
+    const existing = asObject(asObject(window.openai?.widgetState).transaction);
+    if (existing.transactionId === data.transactionId) return;
+    // Keep only the display-safe result. Transaction bytes, signatures and any
+    // reusable authorization material must never cross into the card state.
+    const transaction = { transactionId: data.transactionId, expiresAt: data.expiresAt, reviewUrl: data.reviewUrl, signingRequired: data.signingRequired, summary: data.summary };
+    try { window.openai.setWidgetState({ transaction }); } catch { /* State persistence is an optional bridge capability. */ }
   }
   function render() {
     currentData = outputData(); const summary = currentData.summary || {}; const ready = Boolean(currentData.transactionId);
+    if (ready) saveOutput(currentData);
     pair.textContent = ready ? summary.inputToken + ' → ' + summary.outputToken : 'Transaction details unavailable';
     amount.textContent = ready ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : 'The MCP client did not pass the tool structured data to this card. Use the review link in the tool response.';
     const fields = ready ? [['Expected / minimum', summary.expectedOutput ? summary.expectedOutput + ' / ' + summary.minimumOutput + ' ' + summary.outputToken : summary.expectedOutputAtomic + ' / ' + summary.minimumOutputAtomic + ' atomic'], ['Maximum slippage', (summary.slippageBps / 100) + '%'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', new Date(currentData.expiresAt).toLocaleTimeString()], ['Transaction ID', currentData.transactionId]] : [];
     details.replaceChildren(); fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
-    review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Awaiting structured tool result…';
+    review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Transaction result is unavailable';
   }
   async function pollStatus() {
     if (!currentData.transactionId || !window.openai?.callTool) return;

@@ -120,12 +120,20 @@ return {
 
 卡片使用 `window.openai.toolOutput` 或 `window.openai.structuredContent` 读取工具输出；bridge 在工具完成后会触发 `openai:set_globals`，所以应在事件后重绘。
 
+工具输出可能在客户端恢复会话或重新挂载卡片后不再注入。对于需要持续显示的卡片，应在首次获得结果时，把**仅用于显示的安全摘要**写入此卡片的 `window.openai.widgetState`（通过 `setWidgetState`）；重新挂载时以该状态为回退。不要把私钥、交易原文、签名或可复用令牌写入 widget state。状态中的交易 ID 仍只是定位符，后续状态读取必须由 MCP 服务端按当前账户授权。
+
 ```js
 function outputData() {
   const output = window.openai?.toolOutput || window.openai?.structuredContent || {};
-  return output.summary ? output : (output.structuredContent || {});
+  const result = output.summary ? output : (output.structuredContent || {});
+  return result.transactionId ? result : (window.openai?.widgetState?.transaction || {});
 }
 
+const data = outputData();
+if (data.transactionId) {
+  const { transactionId, expiresAt, reviewUrl, signingRequired, summary } = data;
+  window.openai?.setWidgetState?.({ transaction: { transactionId, expiresAt, reviewUrl, signingRequired, summary } });
+}
 window.addEventListener('openai:set_globals', render);
 
 review.addEventListener('click', () => {
