@@ -2,6 +2,7 @@ import { z } from 'zod';
 import famousTokensConfig from '@/config/solana-famous-tokens.json';
 
 const TOKEN_PROGRAM_ID = 'TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA';
+const PUBLIC_FALLBACK_RPC_URL = 'https://solana-rpc.publicnode.com';
 
 const solanaAssetSchema = z.object({
   symbol: z.string().trim().min(1).max(20),
@@ -58,6 +59,18 @@ async function rpc<T>(endpoint: string, method: string, params: unknown[]): Prom
   return body.result;
 }
 
+function rpcEndpoints(primary: string) {
+  return [...new Set([primary, PUBLIC_FALLBACK_RPC_URL])];
+}
+
+async function rpcWithFailover<T>(endpoints: string[], method: string, params: unknown[]) {
+  let lastError: unknown;
+  for (const endpoint of endpoints) {
+    try { return { value: await rpc<T>(endpoint, method, params), endpoint }; } catch (error) { lastError = error; }
+  }
+  throw lastError instanceof Error ? lastError : new Error('All configured Solana RPC endpoints failed.');
+}
+
 async function pricesUsd() {
   const ids = solanaAssets.map(asset => asset.coingeckoId).join(',');
   try {
@@ -75,9 +88,10 @@ async function pricesUsd() {
 export async function getMainSolanaPortfolio(address: string, rpcUrl: string): Promise<SolanaPortfolio> {
   // SOL is the essential portfolio value. Token-program endpoints are frequently
   // rate-limited independently, so their failure must not hide a successful SOL read.
-  const balanceResponse = await rpc<{ value: number }>(rpcUrl, 'getBalance', [address, { commitment: 'confirmed' }]);
+  const endpoints = rpcEndpoints(rpcUrl);
+  const balanceResponse = await rpcWithFailover<{ value: number }>(endpoints, 'getBalance', [address, { commitment: 'confirmed' }]);
   const [ownerScan, prices] = await Promise.all([
-    rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).then(value => ({ value, error: undefined as string | undefined })).catch(error => ({ value: null, error: error instanceof Error ? error.message : 'Unknown token-account RPC error.' })),
+    rpcWithFailover<{ value: TokenAccount[] }>(endpoints, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).then(result => ({ value: result.value, endpoint: result.endpoint, error: undefined as string | undefined })).catch(error => ({ value: null, endpoint: undefined as string | undefined, error: error instanceof Error ? error.message : 'Unknown token-account RPC error.' })),
     pricesUsd(),
   ]);
   // Restore the mint-scoped fallback from the last known-good asset reader.
@@ -86,10 +100,10 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
   const fallbackAssets = ownerScan.value?.value?.length ? [] : solanaAssets.filter(asset => asset.mint);
   const fallbackResults = await Promise.all(fallbackAssets.map(async asset => {
     try {
-      const value = await rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }]);
-      return { asset, accounts: value.value, error: undefined as string | undefined };
+      const result = await rpcWithFailover<{ value: TokenAccount[] }>(endpoints, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }]);
+      return { asset, accounts: result.value.value, endpoint: result.endpoint, error: undefined as string | undefined };
     } catch (error) {
-      return { asset, accounts: [] as TokenAccount[], error: error instanceof Error ? error.message : 'Unknown mint RPC error.' };
+      return { asset, accounts: [] as TokenAccount[], endpoint: undefined as string | undefined, error: error instanceof Error ? error.message : 'Unknown mint RPC error.' };
     }
   }));
   const tokenAccounts = ownerScan.value?.value?.length ? ownerScan.value.value : fallbackResults.flatMap(result => result.accounts);
@@ -104,7 +118,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
     tokenAmounts.set(mint, { amount: (current?.amount ?? 0n) + BigInt(token.amount), decimals: token.decimals });
   }
   const configuredHoldings = solanaAssets.flatMap((asset) => {
-    const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value), decimals: 9 };
+    const token = asset.mint ? tokenAmounts.get(asset.mint) : { amount: BigInt(balanceResponse.value.value), decimals: 9 };
     if (!token || token.amount === 0n) return [];
     const balance = token ? displayAmount(token.amount.toString(), token.decimals) : '0';
     const priceUsd = prices.get(asset.symbol) ?? null;
@@ -118,7 +132,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string): P
   return {
     assets: [...configuredHoldings, ...discoveredHoldings],
     diagnostics: {
-      rpcHost: new URL(rpcUrl).host,
+      rpcHost: new URL(ownerScan.endpoint ?? balanceResponse.endpoint).host,
       ownerScan: { status: ownerScan.error ? 'error' : 'ok', accountCount: ownerScan.value?.value.length ?? 0, ...(ownerScan.error ? { error: ownerScan.error } : {}) },
       mintFallback: fallbackResults.map(result => ({ symbol: result.asset.symbol, accountCount: result.accounts.length, ...(result.error ? { error: result.error } : {}) })),
     },
