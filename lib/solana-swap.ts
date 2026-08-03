@@ -43,7 +43,13 @@ function inspect(serialized: string) {
 
 function token(symbol: string) {
   const found = solanaSwapTokens.find(item => item.symbol.toUpperCase() === symbol.trim().toUpperCase());
-  if (!found) throw new Error(`Unsupported token "${symbol}". Call list_solana_swap_tokens first and use one of its symbols.`);
+  if (!found) {
+    try {
+      new PublicKey(symbol);
+      throw new Error(`Warning: "${symbol}" looks like a Solana Mint address, but create_solana_swap accepts token symbols only. Use create_solana_swap_by_mint(inputMint, outputMint, amount) instead; its amount must be an atomic integer (for example, 0.5 USDC = "500000").`);
+    } catch (error) { if (error instanceof Error && error.message.startsWith('Warning:')) throw error; }
+    throw new Error(`Unsupported token "${symbol}". Call list_solana_swap_tokens first and use one of its returned symbols, or use create_solana_swap_by_mint for arbitrary Mint addresses.`);
+  }
   return found;
 }
 
