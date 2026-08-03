@@ -126,12 +126,10 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
     return [{ symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd }];
   });
-  const configuredMints = new Set(trackedAssets.flatMap(asset => asset.mint ? [asset.mint] : []));
-  const discoveredHoldings = [...tokenAmounts.entries()]
-    .filter(([mint, token]) => !configuredMints.has(mint) && token.amount > 0n)
-    .map(([mint, token]) => ({ symbol: `${mint.slice(0, 4)}…${mint.slice(-4)}`, name: 'Unrecognized SPL token', mint, balance: displayAmount(token.amount.toString(), token.decimals), priceUsd: null, valueUsd: null }));
   return {
-    assets: [...configuredHoldings, ...discoveredHoldings],
+    // Do not surface arbitrary dust/spam tokens. Only global defaults and the
+    // user's explicit watchlist are shown, and both remain zero-balance hidden.
+    assets: configuredHoldings,
     diagnostics: {
       rpcHost: new URL(ownerScan.endpoint ?? balanceResponse.endpoint).host,
       ownerScan: { status: ownerScan.error ? 'error' : 'ok', accountCount: ownerScan.value?.value.length ?? 0, ...(ownerScan.error ? { error: ownerScan.error } : {}) },

@@ -29,7 +29,7 @@ describe('getMainSolanaAssetBalances', () => {
     expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'SOL', balance: '2', valueUsd: 200 })]));
   });
 
-  it('includes a nonzero SPL holding whose mint is not in the configured token list', async () => {
+  it('hides a nonzero SPL holding whose mint is not in the configured token list', async () => {
     const unknownMint = '11111111111111111111111111111112';
     vi.stubGlobal('fetch', vi.fn(async (_input: string | URL | Request, init?: RequestInit) => {
       if (!init?.body) return Response.json({ solana: { usd: 100 } });
@@ -39,7 +39,7 @@ describe('getMainSolanaAssetBalances', () => {
       return Response.json({});
     }));
     const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example');
-    expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ mint: unknownMint, balance: '42', name: 'Unrecognized SPL token' })]));
+    expect(assets).not.toEqual(expect.arrayContaining([expect.objectContaining({ mint: unknownMint })]));
   });
 
   it('uses a mint-scoped lookup when an owner-wide scan returns empty', async () => {
