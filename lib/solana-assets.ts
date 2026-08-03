@@ -36,7 +36,7 @@ export const solanaAssets = parseSolanaFamousTokens(famousTokensConfig);
 export const solanaSwapTokens = solanaAssets.map(asset => ({ ...asset, mint: asset.mint ?? 'So11111111111111111111111111111111111111112' }));
 
 type RpcResponse<T> = { result?: T; error?: { message?: string } };
-type TokenAccount = { account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };
+type TokenAccount = { pubkey?: string; account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };
 
 export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null };
 
@@ -77,14 +77,21 @@ export async function getMainSolanaAssetBalances(address: string, rpcUrl: string
     rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { programId: TOKEN_PROGRAM_ID }, { encoding: 'jsonParsed' }]).catch(() => null),
     pricesUsd(),
   ]);
-  // Some shared RPC tiers reject an owner-wide program scan but allow a mint-scoped
-  // lookup. Retry only our small allowlist, so a partial provider outage does not
-  // make all non-SOL assets disappear.
-  const tokenAccounts = legacyAccounts?.value ?? (await Promise.allSettled(
+  // Owner-wide scans can be incomplete or rate-limited on shared RPC tiers. Always
+  // query the small configured mint allowlist as well, then merge both sources.
+  // This is intentionally bounded to the assets we present in the UI.
+  const mintResults = await Promise.allSettled(
     solanaAssets.filter(asset => asset.mint).map(asset => rpc<{ value: TokenAccount[] }>(rpcUrl, 'getTokenAccountsByOwner', [address, { mint: asset.mint! }, { encoding: 'jsonParsed' }])),
-  )).flatMap(result => result.status === 'fulfilled' ? result.value.value : []);
+  );
+  const tokenAccounts = [
+    ...(legacyAccounts?.value ?? []),
+    ...mintResults.flatMap(result => result.status === 'fulfilled' ? result.value.value : []),
+  ];
   const tokenAmounts = new Map<string, { amount: bigint; decimals: number }>();
+  const seenAccounts = new Set<string>();
   for (const account of tokenAccounts) {
+    if (account.pubkey && seenAccounts.has(account.pubkey)) continue;
+    if (account.pubkey) seenAccounts.add(account.pubkey);
     const token = account.account.data.parsed.info.tokenAmount;
     const mint = account.account.data.parsed.info.mint;
     const current = tokenAmounts.get(mint);
