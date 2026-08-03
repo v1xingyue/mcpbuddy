@@ -9,7 +9,7 @@ import { solanaSwapTokens } from '@/lib/solana-assets';
 const JUPITER = 'https://api.jup.ag/swap/v1';
 type JupiterQuote = { inputMint: string; outputMint: string; inAmount: string; outAmount: string; otherAmountThreshold: string; priceImpactPct?: string; routePlan?: Array<{ swapInfo?: { label?: string } }> };
 type JupiterSwapBuild = { swapTransaction?: string; simulationError?: { errorCode?: string; error?: string } | string };
-type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
+type SigningSummary = { kind: 'swap' | 'transfer'; inputToken: string; outputToken: string; inputMint: string; outputMint: string; inputAmount: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; expectedOutput?: string; minimumOutput?: string; slippageBps: number; priceImpactPct: string | null; route: string[]; recipient?: string; feePayer: string; requiredSigners: string[]; instructionProgramIds: string[]; transactionDigest: string };
 const TOKEN_PROGRAM_ID = new PublicKey('TokenkegQfeZyiNwAJbNbGKPFXCWuBvf9Ss623VQ5DA');
 const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 let quoteableTokenCache: { expiresAt: number; tokens: typeof solanaSwapTokens } | null = null;
@@ -84,6 +84,14 @@ export function toAtomicAmount(value: string, decimals: number) {
   const atomic = BigInt(`${whole}${fraction.padEnd(decimals, '0')}`);
   if (atomic <= 0n) throw new Error('amount must be greater than zero.');
   return atomic.toString();
+}
+function fromAtomicAmount(value: string, decimals: number) { const padded = value.padStart(decimals + 1, '0'); const fraction = padded.slice(-decimals).replace(/0+$/, ''); return fraction ? `${padded.slice(0, -decimals)}.${fraction}` : padded.slice(0, -decimals); }
+async function jupiterToken(mint: string) {
+  type Token = { id: string; symbol?: string; name?: string; decimals?: number };
+  const response = await fetch(`https://api.jup.ag/tokens/v2/search?query=${encodeURIComponent(mint)}`, { headers: headers(), cache: 'no-store' });
+  if (!response.ok) return null;
+  const tokens = await response.json() as Token[];
+  return tokens.find(token => token.id === mint) ?? null;
 }
 
 async function rpc<T>(method: string, params: unknown[]) {
@@ -168,8 +176,10 @@ export async function createSwapByMintForUser(userId: string, args: { inputMint:
   if (!buildResponse.ok) { const detail = (await buildResponse.text()).slice(0, 2_000); throw new Error(`Jupiter transaction build failed (${buildResponse.status}).${detail ? ` Response: ${detail}` : ''}`); }
   const built = await buildResponse.json() as JupiterSwapBuild; if (built.simulationError) { const detail = typeof built.simulationError === 'string' ? built.simulationError : `${built.simulationError.errorCode ?? 'SIMULATION_ERROR'}: ${built.simulationError.error ?? 'Unknown simulation error.'}`; throw new Error(`Jupiter built a transaction that failed simulation: ${detail}`); } if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction); if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
+  const [inputToken, outputToken] = await Promise.all([jupiterToken(inputMint.toBase58()), jupiterToken(outputMint.toBase58())]);
   const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-4)}`;
-  const summary: SigningSummary = { kind: 'swap', inputToken: short(inputMint.toBase58()), outputToken: short(outputMint.toBase58()), inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
+  const inputDecimals = inputToken?.decimals; const outputDecimals = outputToken?.decimals;
+  const summary: SigningSummary = { kind: 'swap', inputToken: inputToken?.symbol ?? short(inputMint.toBase58()), outputToken: outputToken?.symbol ?? short(outputMint.toBase58()), inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: inputDecimals === undefined ? args.amount : fromAtomicAmount(quote.inAmount, inputDecimals), inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, ...(outputDecimals === undefined ? {} : { expectedOutput: fromAtomicAmount(quote.outAmount, outputDecimals), minimumOutput: fromAtomicAmount(quote.otherAmountThreshold, outputDecimals) }), slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
   const expiresAt = new Date(Date.now() + 5 * 60_000); const [row] = await getDb().insert(swapTransactions).values({ userId, walletAddress: wallet.address, serializedTransaction: built.swapTransaction, messageBase64: details.messageBase64, transactionDigest: details.transactionDigest, summary: JSON.stringify(summary), expiresAt }).returning({ id: swapTransactions.id });
   return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
 }

@@ -51,7 +51,7 @@ const SWAP_REVIEW_UI = `<!doctype html>
     currentData = outputData(); const summary = currentData.summary || {}; const ready = Boolean(currentData.transactionId);
     pair.textContent = ready ? summary.inputToken + ' → ' + summary.outputToken : 'Transaction details unavailable';
     amount.textContent = ready ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : 'The MCP client did not pass the tool structured data to this card. Use the review link in the tool response.';
-    const fields = ready ? [['Maximum slippage', (summary.slippageBps / 100) + '%'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', new Date(currentData.expiresAt).toLocaleTimeString()], ['Transaction ID', currentData.transactionId]] : [];
+    const fields = ready ? [['Expected / minimum', summary.expectedOutput ? summary.expectedOutput + ' / ' + summary.minimumOutput + ' ' + summary.outputToken : summary.expectedOutputAtomic + ' / ' + summary.minimumOutputAtomic + ' atomic'], ['Maximum slippage', (summary.slippageBps / 100) + '%'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', new Date(currentData.expiresAt).toLocaleTimeString()], ['Transaction ID', currentData.transactionId]] : [];
     details.replaceChildren(); fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
     review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Awaiting structured tool result…';
   }
