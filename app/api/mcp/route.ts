@@ -27,18 +27,22 @@ const SWAP_REVIEW_UI = `<!doctype html>
   dt { color: #667085; } dd { margin: 0; font-weight: 600; overflow-wrap: anywhere; }
   .notice { padding: 10px; border-radius: 8px; background: #fff8e6; color: #6b4e00; font-size: 13px; line-height: 1.4; }
   button { width: 100%; border: 0; border-radius: 9px; padding: 11px 14px; margin-top: 14px; background: #155eef; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
-  button:hover { background: #004eea; } @media (prefers-color-scheme: dark) { .card { background: #192235; border-color: #34415b; } .notice { background: #41350e; color: #ffde83; } }
+  button:hover { background: #004eea; } button:disabled { background: #94a3b8; cursor: wait; } @media (prefers-color-scheme: dark) { .card { background: #192235; border-color: #34415b; } .notice { background: #41350e; color: #ffde83; } }
 </style></head><body><main class="card" aria-live="polite"><p class="label">UNSIGNED SWAP · REVIEW REQUIRED</p><h2 id="pair">Preparing transaction…</h2><p class="amount" id="amount"></p><dl id="details"></dl><div class="notice">This card cannot sign or submit a transaction. Review the immutable summary and sign only in MCPBuddy with your connected wallet.</div><button id="review" type="button">Open secure review & sign</button></main>
 <script>
-  const output = window.openai?.toolOutput || window.openai?.structuredContent || {};
-  const data = output.summary ? output : (output.structuredContent || {});
-  const summary = data.summary || {};
-  document.querySelector('#pair').textContent = summary.inputToken && summary.outputToken ? summary.inputToken + ' → ' + summary.outputToken : 'Swap created';
-  document.querySelector('#amount').textContent = summary.inputAmount && summary.inputToken ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : '';
-  const fields = [['Maximum slippage', summary.slippageBps != null ? (summary.slippageBps / 100) + '%' : '—'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', data.expiresAt ? new Date(data.expiresAt).toLocaleTimeString() : '—'], ['Transaction ID', data.transactionId || '—']];
-  const details = document.querySelector('#details');
-  fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
-  document.querySelector('#review').addEventListener('click', () => { if (data.reviewUrl) window.open(data.reviewUrl, '_blank', 'noopener'); });
+  const pair = document.querySelector('#pair'); const amount = document.querySelector('#amount'); const details = document.querySelector('#details'); const review = document.querySelector('#review'); let currentData = {};
+  function outputData() { const output = window.openai?.toolOutput || window.openai?.structuredContent || {}; return output.summary ? output : (output.structuredContent || {}); }
+  function render() {
+    currentData = outputData(); const summary = currentData.summary || {}; const ready = Boolean(currentData.transactionId);
+    pair.textContent = ready ? summary.inputToken + ' → ' + summary.outputToken : 'Creating unsigned swap…';
+    amount.textContent = ready ? 'Sell ' + summary.inputAmount + ' ' + summary.inputToken : 'Waiting for MCPBuddy to return the reviewed transaction.';
+    const fields = ready ? [['Maximum slippage', (summary.slippageBps / 100) + '%'], ['Price impact', summary.priceImpactPct != null ? summary.priceImpactPct + '%' : '—'], ['Route', (summary.route || []).join(' → ') || '—'], ['Expires', new Date(currentData.expiresAt).toLocaleTimeString()], ['Transaction ID', currentData.transactionId]] : [];
+    details.replaceChildren(); fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
+    review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Creating transaction…';
+  }
+  review.addEventListener('click', () => { if (currentData.reviewUrl) window.open(currentData.reviewUrl, '_blank', 'noopener'); });
+  // The Apps bridge changes globals after a tool call completes; re-render then.
+  window.addEventListener('openai:set_globals', render); render();
 </script></body></html>`;
 
 async function currentUser(accountId: unknown) {
