@@ -34,6 +34,8 @@ do not add a component library or CSS framework without an explicit request.
    any command that cannot run and why; do not claim it passed.
 5. Update README or the relevant `docs/` design document whenever the public
    MCP contract, environment setup, OAuth behavior, or signing flow changes.
+6. When changing styles, logically debug the affected page or pages to confirm
+   the intended UI behavior still works.
 
 Useful commands:
 
