@@ -188,6 +188,13 @@ export async function pendingSwapsForUser(userId: string) {
   return getDb().select({ id: swapTransactions.id, serializedTransaction: swapTransactions.serializedTransaction, summary: swapTransactions.summary, status: swapTransactions.status, expiresAt: swapTransactions.expiresAt, createdAt: swapTransactions.createdAt }).from(swapTransactions).where(and(eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
 }
 
+/** Read-only status for a pending transaction; safe to expose to the MCP App. */
+export async function swapStatusForUser(userId: string, id: string) {
+  const [row] = await getDb().select({ id: swapTransactions.id, status: swapTransactions.status, signature: swapTransactions.signature, error: swapTransactions.error, expiresAt: swapTransactions.expiresAt, submittedAt: swapTransactions.submittedAt }).from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
+  if (!row) throw new Error('Transaction not found for this account.');
+  return { transactionId: row.id, status: row.status, signature: row.signature, error: row.error, expiresAt: row.expiresAt.toISOString(), submittedAt: row.submittedAt?.toISOString() ?? null };
+}
+
 /** Deletes only an unsubmitted transaction belonging to this account. No on-chain state exists yet. */
 export async function deletePendingSwap(userId: string, id: string) {
   const [row] = await getDb().select({ id: swapTransactions.id, status: swapTransactions.status }).from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);

@@ -10,7 +10,7 @@ import { env } from '@/lib/config';
 import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
-import { createSwapForUser, createSwapByMintForUser, createTokenTransferForUser, quoteableSolanaSwapTokens } from '@/lib/solana-swap';
+import { createSwapForUser, createSwapByMintForUser, createTokenTransferForUser, quoteableSolanaSwapTokens, swapStatusForUser } from '@/lib/solana-swap';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -28,9 +28,9 @@ const SWAP_REVIEW_UI = `<!doctype html>
   .notice { padding: 10px; border-radius: 8px; background: #fff8e6; color: #6b4e00; font-size: 13px; line-height: 1.4; }
   button { width: 100%; border: 0; border-radius: 9px; padding: 11px 14px; margin-top: 14px; background: #155eef; color: #fff; font: inherit; font-weight: 700; cursor: pointer; }
   button:hover { background: #004eea; } button:disabled { background: #94a3b8; cursor: wait; } @media (prefers-color-scheme: dark) { .card { background: #192235; border-color: #34415b; } .notice { background: #41350e; color: #ffde83; } }
-</style></head><body><main class="card" aria-live="polite"><p class="label">UNSIGNED SWAP · REVIEW REQUIRED</p><h2 id="pair">Preparing transaction…</h2><p class="amount" id="amount"></p><dl id="details"></dl><div class="notice">This card cannot sign or submit a transaction. Review the immutable summary and sign only in MCPBuddy with your connected wallet.</div><button id="review" type="button">Open secure review & sign</button></main>
+</style></head><body><main class="card" aria-live="polite"><p class="label">UNSIGNED SWAP · REVIEW REQUIRED</p><h2 id="pair">Preparing transaction…</h2><p class="amount" id="amount"></p><dl id="details"></dl><div class="notice">This card cannot sign or submit a transaction. Review the immutable summary and sign only in MCPBuddy with your connected wallet.</div><p class="notice" id="status" hidden></p><button id="review" type="button">Open secure review & sign</button></main>
 <script>
-  const pair = document.querySelector('#pair'); const amount = document.querySelector('#amount'); const details = document.querySelector('#details'); const review = document.querySelector('#review'); let currentData = {};
+  const pair = document.querySelector('#pair'); const amount = document.querySelector('#amount'); const details = document.querySelector('#details'); const review = document.querySelector('#review'); const status = document.querySelector('#status'); let currentData = {}; let pollTimer;
   function asObject(value) {
     if (typeof value === 'string') { try { return JSON.parse(value); } catch { return {}; } }
     return value && typeof value === 'object' ? value : {};
@@ -55,7 +55,11 @@ const SWAP_REVIEW_UI = `<!doctype html>
     details.replaceChildren(); fields.forEach(([key, value]) => { const term = document.createElement('dt'); const definition = document.createElement('dd'); term.textContent = key; definition.textContent = value; details.append(term, definition); });
     review.disabled = !ready; review.textContent = ready ? 'Open secure review & sign' : 'Awaiting structured tool result…';
   }
-  review.addEventListener('click', () => { if (currentData.reviewUrl) window.open(currentData.reviewUrl, '_blank', 'noopener'); });
+  async function pollStatus() {
+    if (!currentData.transactionId || !window.openai?.callTool) return;
+    try { const result = await window.openai.callTool('get_solana_transaction_status', { transactionId: currentData.transactionId }); const data = result?.structuredContent || result; if (!data?.status) return; status.hidden = false; status.textContent = data.status === 'submitted' ? 'Submitted on Solana: ' + data.signature : data.status === 'awaiting_signature' ? 'Waiting for wallet signature…' : 'Transaction ' + data.status + (data.error ? ': ' + data.error : ''); if (data.status !== 'awaiting_signature') clearInterval(pollTimer); } catch { /* bridge polling is optional; the account page remains authoritative. */ }
+  }
+  review.addEventListener('click', () => { if (currentData.reviewUrl) { window.open(currentData.reviewUrl, '_blank', 'noopener'); pollStatus(); pollTimer = setInterval(pollStatus, 4000); } });
   // The Apps bridge changes globals after a tool call completes; re-render then.
   window.addEventListener('openai:set_globals', render); render();
 </script></body></html>`;
@@ -92,12 +96,15 @@ const handler = createMcpHandler(
         title: 'Solana swap review',
         description: 'Interactive review card for an unsigned Solana swap.',
         mimeType: 'text/html+skybridge',
-        _meta: { 'openai/widgetPrefersBorder': true, 'openai/widgetAccessible': false },
+        _meta: { 'openai/widgetPrefersBorder': true, 'openai/widgetAccessible': true },
       },
       async () => ({ contents: [{ uri: SWAP_REVIEW_UI_URI, mimeType: 'text/html+skybridge', text: SWAP_REVIEW_UI }] }),
     );
     server.tool('create_solana_token_transfer', 'Create an unsigned SPL-token transfer for review and wallet signing. Call list_solana_swap_tokens first; the recipient must already have a token account for this mint.', { token: z.string().min(1).max(20), recipient: z.string().min(32).max(64), amount: z.string().regex(/^\d+(\.\d+)?$/) }, async (args, extra) => {
       try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await createTokenTransferForUser(user.id, args); const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'; const reviewUrl = `${origin}/account?swap=${result.transactionId}`; return { content: [{ type: 'text', text: `Unsigned ${result.summary.inputAmount} ${result.summary.inputToken} transfer created for ${args.recipient}. Open ${reviewUrl} to review and sign.` }], structuredContent: { ...result, reviewUrl, signingRequired: true }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI } }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create token transfer.' }], isError: true }; }
+    });
+    server.tool('get_solana_transaction_status', 'Read the status of one account-owned pending Solana transaction. Use the transactionId returned by a create_solana_swap or transfer tool.', { transactionId: z.string().uuid() }, async ({ transactionId }, extra) => {
+      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await swapStatusForUser(user.id, transactionId); return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not read transaction status.' }], isError: true }; }
     });
     server.tool(
       'hello',
