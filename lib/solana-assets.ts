@@ -43,7 +43,7 @@ export const solanaSwapTokens = solanaAssets.map(asset => ({ ...asset, mint: ass
 type RpcResponse<T> = { result?: T; error?: { message?: string } };
 type TokenAccount = { pubkey?: string; account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };
 
-export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null };
+export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null; isWhitelisted: boolean };
 export type SolanaPortfolioDiagnostics = { rpcHost: string; ownerScan: { status: 'ok' | 'error'; accountCount: number; error?: string }; mintFallback: Array<{ symbol: string; accountCount: number; error?: string }> };
 export type SolanaPortfolio = { assets: SolanaAssetBalance[]; diagnostics: SolanaPortfolioDiagnostics };
 
@@ -119,6 +119,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
   // A few RPC providers return an empty owner-wide program scan while still
   // answering exact-mint requests (notably for USDC token accounts).
   const trackedAssets = [...solanaAssets, ...customAssets.filter(custom => !solanaAssets.some(asset => asset.mint === custom.mint))];
+  const whitelistedMints = new Set(customAssets.map(asset => asset.mint).filter((mint): mint is string => Boolean(mint)));
   const fallbackAssets = ownerScan.value?.value?.length ? [] : trackedAssets.filter(asset => asset.mint);
   const fallbackResults = await Promise.all(fallbackAssets.map(async asset => {
     try {
@@ -152,7 +153,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
   const configuredHoldings = holdings.map(({ asset, balance }) => {
     const priceUsd = prices.get(asset.symbol) ?? (asset.mint ? routePrices.get(asset.mint) ?? null : null);
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
-    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd };
+    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd, isWhitelisted: asset.mint !== null && whitelistedMints.has(asset.mint) };
   });
   return {
     // Do not surface arbitrary dust/spam tokens. Only global defaults and the

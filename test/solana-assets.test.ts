@@ -52,7 +52,7 @@ describe('getMainSolanaAssetBalances', () => {
       return Response.json({});
     }));
     const assets = await getMainSolanaAssetBalances('11111111111111111111111111111111', 'https://rpc.example', [{ symbol: 'CUSTOM', name: 'Custom token', mint: customMint, decimals: 0, coingeckoId: '' }]);
-    expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'CUSTOM', mint: customMint, balance: '1.234567', priceUsd: null, valueUsd: null })]));
+    expect(assets).toEqual(expect.arrayContaining([expect.objectContaining({ symbol: 'CUSTOM', mint: customMint, balance: '1.234567', priceUsd: null, valueUsd: null, isWhitelisted: true })]));
   });
 
   it('prices a user-whitelisted token from its Jupiter USDC route', async () => {

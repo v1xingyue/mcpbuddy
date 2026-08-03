@@ -4,9 +4,9 @@ import { WalletAssetsPanel } from '@/components/wallet-assets-panel';
 import { isLocalUiTestMode } from '@/lib/local-ui-test-mode';
 
 const fixtureAssets = [
-  { symbol: 'SOL', name: 'Solana', mint: null, balance: '0.141992', priceUsd: 72.33, valueUsd: 10.27 },
-  { symbol: 'USDC', name: 'USD Coin', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGkZwyTDt1v', balance: '13.158477', priceUsd: 1, valueUsd: 13.15 },
-  { symbol: 'NVDAx', name: 'NVIDIA xStock', mint: '9Yj5B2LQ9QEDhHWr7z1aQPFZdh5iJ9u6rT5z7EN6TgZe', balance: '0.014912', priceUsd: null, valueUsd: null },
+  { symbol: 'SOL', name: 'Solana', mint: null, balance: '0.141992', priceUsd: 72.33, valueUsd: 10.27, isWhitelisted: false },
+  { symbol: 'USDC', name: 'USD Coin', mint: 'EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGkZwyTDt1v', balance: '13.158477', priceUsd: 1, valueUsd: 13.15, isWhitelisted: false },
+  { symbol: 'NVDAx', name: 'NVIDIA xStock', mint: '9Yj5B2LQ9QEDhHWr7z1aQPFZdh5iJ9u6rT5z7EN6TgZe', balance: '0.014912', priceUsd: null, valueUsd: null, isWhitelisted: true },
 ];
 
 export default function LocalWalletVisualFixture() {
