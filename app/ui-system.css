@@ -50,12 +50,13 @@ a:focus-visible,button:focus-visible,summary:focus-visible{outline:3px solid var
 .sidebar nav a:hover{transform:translateX(2px);border-color:#dfe7dc;background:#f1f5ec}
 .sidebar nav a.active{border-color:var(--ui-ink);box-shadow:0 6px 13px rgba(20,37,31,.13)}
 .sidebar nav a.active:before{position:absolute;left:-21px;width:3px;height:20px;border-radius:0 3px 3px 0;background:var(--ui-accent);content:''}
+.sidebar-nav-group{display:grid;gap:4px}.sidebar-nav-group-heading{display:grid;grid-template-columns:minmax(0,1fr) 32px;align-items:center}.sidebar-nav-group-heading>a{min-width:0}.sidebar-nav-toggle{display:grid;place-items:center;width:32px;height:32px;padding:0;border:1px solid transparent;border-radius:var(--ui-radius-sm);background:transparent;color:var(--ui-muted)}.sidebar-nav-toggle:hover{border-color:var(--ui-border);background:var(--ui-surface-raised);color:var(--ui-ink)}.sidebar-nav-toggle svg{transition:transform var(--ui-duration-fast) var(--ui-ease)}.sidebar-nav-group.is-expanded .sidebar-nav-toggle svg{transform:rotate(180deg)}.sidebar-submenu{display:grid;gap:3px;margin-left:13px;padding:3px 0 3px 12px;border-left:1px solid var(--ui-border)}.sidebar nav .sidebar-submenu a{gap:9px;padding:8px 10px;color:var(--ui-muted);font-size:12px}.sidebar nav .sidebar-submenu a:hover{transform:none}.sidebar nav .sidebar-submenu a.active{border-color:var(--ui-border-strong);background:var(--ui-surface-raised);color:var(--ui-ink);box-shadow:none}.sidebar nav .sidebar-submenu a.active:before{display:none}
 .app-page-head{position:relative;padding-bottom:25px}
 .app-page-head:after{position:absolute;bottom:0;left:0;width:44px;height:3px;border-radius:99px;background:linear-gradient(90deg,var(--ui-accent-ink),var(--ui-accent));content:''}
 .app-page-head>p:last-child{max-width:650px}
 .account-summary>div,.merge-card{border-color:var(--ui-border);border-radius:var(--ui-radius-md);box-shadow:var(--ui-shadow-sm)}
 .page-row{transition:border-color var(--ui-duration-fast) ease,background var(--ui-duration-fast) ease}.page-row:hover{border-color:var(--ui-border-strong);background:rgba(255,255,255,.42)}.page-row>a{margin:0;padding-right:8px}.page-row>a:focus-visible{outline-offset:-3px}
-@media(max-width:720px){.sidebar nav a.active:before{display:none}.app-page-head{padding-bottom:20px}}
+@media(max-width:720px){.sidebar nav a.active:before{display:none}.sidebar-nav-group-heading{min-width:max-content}.sidebar-submenu{margin-left:8px}.app-page-head{padding-bottom:20px}}
 @media(prefers-reduced-motion:reduce){.sidebar nav a,.page-row{transition:none}.sidebar nav a:hover{transform:none}}
 
 /* Cards only advertise a hand cursor when they perform an action. */
