@@ -129,7 +129,7 @@ const handler = createMcpHandler(
       'create_solana_swap',
       {
         title: 'Create Solana swap',
-        description: 'Create a Jupiter-routed Solana swap as an unsigned, short-lived transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user must review and sign it in MCPBuddy.',
+        description: 'Create a Jupiter-routed Solana swap as an unsigned, short-lived transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user must review and sign it in MCPBuddy within about 45 seconds.',
         inputSchema: {
           inputToken: z.string().min(1).max(20).describe('Input token symbol returned by list_solana_swap_tokens, for example SOL or USDC.'),
           outputToken: z.string().min(1).max(20).describe('Output token symbol returned by list_solana_swap_tokens.'),

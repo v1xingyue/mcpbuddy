@@ -48,14 +48,17 @@ export async function createSwapForUser(userId: string, args: { inputToken: stri
   const quoteResponse = await fetch(`${JUPITER}/quote?${query}`, { headers: headers(), cache: 'no-store' });
   if (!quoteResponse.ok) throw new Error(`Jupiter quote failed (${quoteResponse.status}).`);
   const quote = await quoteResponse.json() as JupiterQuote;
-  const buildResponse = await fetch(`${JUPITER}/swap`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers() }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: wallet.address, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true }) });
+  const buildResponse = await fetch(`${JUPITER}/swap`, { method: 'POST', headers: { 'content-type': 'application/json', ...headers() }, body: JSON.stringify({ quoteResponse: quote, userPublicKey: wallet.address, wrapAndUnwrapSol: true, dynamicComputeUnitLimit: true, blockhashSlotsToExpiry: 150 }) });
   if (!buildResponse.ok) throw new Error(`Jupiter transaction build failed (${buildResponse.status}).`);
   const built = await buildResponse.json() as { swapTransaction?: string };
   if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction);
   if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
   const summary: SigningSummary = { kind: 'swap', inputToken: input.symbol, outputToken: output.symbol, inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
-  const expiresAt = new Date(Date.now() + 5 * 60_000);
+  // A Jupiter transaction's recent blockhash is normally valid for roughly one
+  // minute. Do not advertise a longer review window: some wallets refresh an
+  // expired blockhash before signing, which correctly fails our immutable-message check.
+  const expiresAt = new Date(Date.now() + 45_000);
   const [row] = await getDb().insert(swapTransactions).values({ userId, walletAddress: wallet.address, serializedTransaction: built.swapTransaction, messageBase64: details.messageBase64, transactionDigest: details.transactionDigest, summary: JSON.stringify(summary), expiresAt }).returning({ id: swapTransactions.id });
   return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
 }
