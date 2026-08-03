@@ -1,5 +1,7 @@
 import { createHash } from 'crypto';
 import { VersionedTransaction } from '@solana/web3.js';
+import nacl from 'tweetnacl';
+import bs58 from 'bs58';
 import { and, eq } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { swapTransactions, walletBindings } from '@/lib/db/schema';
@@ -12,9 +14,23 @@ type SigningSummary = { kind: 'swap'; inputToken: string; outputToken: string; i
 
 function headers(): Record<string, string> { return env.JUPITER_API_KEY ? { 'x-api-key': env.JUPITER_API_KEY } : {}; }
 function digest(bytes: Uint8Array) { return createHash('sha256').update(bytes).digest('hex'); }
+/** Returns the exact message bytes from a Solana wire transaction, without parsing/re-encoding it. */
+function wireMessage(serialized: string) {
+  const bytes = Buffer.from(serialized, 'base64');
+  let signatures = 0; let shift = 0; let offset = 0;
+  for (;;) {
+    if (offset >= bytes.length || shift > 21) throw new Error('Invalid Solana transaction signature prefix.');
+    const byte = bytes[offset++]; signatures |= (byte & 0x7f) << shift;
+    if ((byte & 0x80) === 0) break;
+    shift += 7;
+  }
+  const messageOffset = offset + signatures * 64;
+  if (messageOffset >= bytes.length) throw new Error('Invalid Solana transaction: message is missing.');
+  return bytes.subarray(messageOffset);
+}
 function inspect(serialized: string) {
   const transaction = VersionedTransaction.deserialize(Buffer.from(serialized, 'base64'));
-  const message = transaction.message.serialize(); const keys = transaction.message.staticAccountKeys;
+  const message = wireMessage(serialized); const keys = transaction.message.staticAccountKeys;
   return {
     messageBase64: Buffer.from(message).toString('base64'), transactionDigest: digest(message), feePayer: keys[0]?.toBase58() ?? '',
     requiredSigners: keys.slice(0, transaction.message.header.numRequiredSignatures).map(key => key.toBase58()),
@@ -81,8 +97,11 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   if (row.expiresAt <= new Date()) throw new Error('This transaction expired. Request a fresh quote and transaction.');
   if (Date.now() - row.createdAt.getTime() > 45_000) throw new Error('This signing payload is no longer current. Refresh the quote, review the new transaction, then sign it.');
   const signed = VersionedTransaction.deserialize(Buffer.from(signedTransaction, 'base64'));
-  if (Buffer.from(signed.message.serialize()).toString('base64') !== row.messageBase64) throw new Error('Rejected: signed transaction message differs from the reviewed transaction.');
+  const signedMessage = wireMessage(signedTransaction);
+  const reviewedMessage = wireMessage(row.serializedTransaction);
+  if (!Buffer.from(signedMessage).equals(reviewedMessage)) throw new Error('Rejected: signed transaction message differs from the reviewed transaction.');
   if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('The wallet did not add a signature.');
+  if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error('Rejected: the bound wallet did not sign this transaction message.');
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
   const response = await fetch(rpcUrl, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'sendTransaction', params: [signedTransaction, { encoding: 'base64', skipPreflight: false, preflightCommitment: 'confirmed', maxRetries: 3 }] }) });
   const body = await response.json() as { result?: string; error?: { message?: string } };

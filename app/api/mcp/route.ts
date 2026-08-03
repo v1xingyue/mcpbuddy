@@ -144,10 +144,10 @@ const handler = createMcpHandler(
         try {
           const user = await currentUser(extra.authInfo?.extra?.githubId);
           const result = await createSwapForUser(user.id, args);
-          const origin = env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun';
-          const output = { ...result, reviewUrl: `${origin}/account`, signingRequired: true, nextStep: 'Open MCPBuddy Account → Pending swaps, inspect the immutable signing summary, then sign with the bound wallet.' };
+          const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun';
+          const output = { ...result, reviewUrl: `${origin}/account?swap=${result.transactionId}`, signingRequired: true, nextStep: 'Open reviewUrl to inspect this immutable signing summary and trigger your wallet’s review-and-sign flow.' };
           return {
-            content: [{ type: 'text', text: `Unsigned ${result.summary.inputToken} → ${result.summary.outputToken} swap created. Review and sign it in MCPBuddy; it expires at ${result.expiresAt}.` }],
+            content: [{ type: 'text', text: `Unsigned ${result.summary.inputToken} → ${result.summary.outputToken} swap created. Open ${output.reviewUrl} to review and trigger signing; it expires at ${result.expiresAt}.` }],
             structuredContent: output,
             _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI },
           };

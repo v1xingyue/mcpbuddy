@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { VersionedTransaction } from '@solana/web3.js';
 
 type Summary = { inputToken?: string; outputToken?: string; inputMint: string; outputMint: string; inputAmount?: string; inputAmountAtomic: string; expectedOutputAtomic: string; minimumOutputAtomic: string; slippageBps: number; priceImpactPct: string | null; route: string[]; feePayer: string; instructionProgramIds: string[]; transactionDigest: string };
@@ -10,8 +10,9 @@ function decode(value: string) { const binary = atob(value); return Uint8Array.f
 function encode(value: Uint8Array) { let binary = ''; for (const byte of value) binary += String.fromCharCode(byte); return btoa(binary); }
 function short(value: string) { return `${value.slice(0, 5)}…${value.slice(-4)}`; }
 
-export function PendingSwapsPanel({ swaps }: { swaps: Pending[] }) {
+export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; autoSignId?: string }) {
   const [status, setStatus] = useState(''); const [pending, setPending] = useState(false);
+  const autoStarted = useRef(false);
   const records = swaps.map(swap => ({ ...swap, summary: JSON.parse(swap.summary) as Summary }));
   async function submit(record: (typeof records)[number], signed: VersionedTransaction) {
     const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ signedTransaction: encode(signed.serialize()) }) });
@@ -67,5 +68,13 @@ export function PendingSwapsPanel({ swaps }: { swaps: Pending[] }) {
       setStatus('Unsigned transaction deleted.'); window.setTimeout(() => window.location.reload(), 500);
     } catch (error) { setStatus(error instanceof Error ? error.message : 'Could not delete transaction.'); } finally { setPending(false); }
   }
+  useEffect(() => {
+    const target = autoSignId ? records.find(record => record.id === autoSignId) : undefined;
+    if (!target || autoStarted.current) return;
+    autoStarted.current = true;
+    void signOne(target);
+  // The link is intentionally one-shot: it must not re-open a wallet after a render.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoSignId]);
   return <section className="pending-swaps" aria-labelledby="pending-swaps-title"><header><div><p className="label">SIGNING QUEUE</p><h2 id="pending-swaps-title">Pending swaps</h2><p>Every card is an immutable transaction generated for your bound wallet. Review the minimum received amount before signing.</p></div>{records.length > 0 && <button type="button" onClick={() => void signAll()} disabled={pending}>{pending ? 'Waiting for wallet…' : `Review & sign all (${records.length})`}</button>}</header>{records.length === 0 ? <p className="wallet-assets-empty">No pending swap transactions.</p> : <div className="pending-swap-list">{records.map(record => <article className="pending-swap" key={record.id}><div className="pending-swap-title"><b>Swap</b><time>Expires {new Date(record.expiresAt).toLocaleTimeString()}</time></div><dl><div><dt>You pay</dt><dd>{record.summary.inputAmount ?? record.summary.inputAmountAtomic} {record.summary.inputToken ?? short(record.summary.inputMint)}</dd></div><div><dt>Expected / minimum receive</dt><dd>{record.summary.expectedOutputAtomic} / {record.summary.minimumOutputAtomic} <small>atomic {record.summary.outputToken ?? short(record.summary.outputMint)}</small></dd></div><div><dt>Protection</dt><dd>{record.summary.slippageBps} bps max slippage{record.summary.priceImpactPct ? ` · ${record.summary.priceImpactPct}% price impact` : ''}</dd></div><div><dt>Transaction content</dt><dd>Fee payer {short(record.summary.feePayer)} · {record.summary.instructionProgramIds.length} program{record.summary.instructionProgramIds.length === 1 ? '' : 's'} · SHA-256 {record.summary.transactionDigest.slice(0, 12)}…</dd></div></dl>{record.summary.route.length > 0 && <p className="swap-route">Route: {record.summary.route.join(' → ')}</p>}<div className="pending-swap-actions"><button type="button" onClick={() => void signOne(record)} disabled={pending}>Review & sign</button><button type="button" className="pending-swap-delete" onClick={() => void deleteOne(record.id)} disabled={pending}>Delete</button></div></article>)}</div>}{status && <p className="swap-status" role="status">{status}</p>}</section>;
 }
