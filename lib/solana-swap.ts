@@ -136,7 +136,7 @@ export async function deletePendingSwap(userId: string, id: string) {
   await getDb().delete(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId), eq(swapTransactions.status, 'awaiting_signature')));
 }
 
-export async function submitSignedSwap(userId: string, id: string, signedTransaction: string) {
+export async function submitSignedSwap(userId: string, id: string, signedTransaction: string, preSignTransaction?: string) {
   const [row] = await getDb().select().from(swapTransactions).where(and(eq(swapTransactions.id, id), eq(swapTransactions.userId, userId))).limit(1);
   if (!row) throw new Error('Swap transaction not found.');
   if (row.status !== 'awaiting_signature') throw new Error(`This transaction is already ${row.status}.`);
@@ -145,7 +145,13 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   const signed = VersionedTransaction.deserialize(Buffer.from(signedTransaction, 'base64'));
   const signedMessage = wireMessage(signedTransaction);
   const reviewedMessage = wireMessage(row.serializedTransaction);
-  if (!normalizeMessageIgnoringRecentBlockhash(signedMessage).equals(normalizeMessageIgnoringRecentBlockhash(reviewedMessage))) throw new Error(transactionDifferenceHint(reviewedMessage, signedMessage));
+  if (preSignTransaction && !Buffer.from(wireMessage(preSignTransaction)).equals(reviewedMessage)) {
+    throw new Error(`Rejected before wallet signing: the browser loaded a different transaction than pending item ${id}. This is a stale-page or transaction-ID mismatch; refresh the account page, then open the new review link.`);
+  }
+  if (!normalizeMessageIgnoringRecentBlockhash(signedMessage).equals(normalizeMessageIgnoringRecentBlockhash(reviewedMessage))) {
+    const source = preSignTransaction ? ' The browser’s pre-sign snapshot matched the reviewed item, so the connected wallet/provider changed the transaction while signing.' : '';
+    throw new Error(`${transactionDifferenceHint(reviewedMessage, signedMessage)}${source}`);
+  }
   if (!signed.signatures.some(signature => signature.some(byte => byte !== 0))) throw new Error('Rejected: the wallet returned no signature. Reopen the transaction and explicitly approve it in the bound wallet.');
   if (!nacl.sign.detached.verify(signedMessage, signed.signatures[0], bs58.decode(row.walletAddress))) throw new Error(`Rejected: the first transaction signature does not verify for bound wallet ${row.walletAddress}. Confirm that the active wallet extension is connected to this account.`);
   const rpcUrl = env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com';
@@ -155,6 +161,7 @@ export async function submitSignedSwap(userId: string, id: string, signedTransac
   await getDb().update(swapTransactions).set({ status: 'submitted', signature: body.result, submittedAt: new Date(), error: null }).where(eq(swapTransactions.id, row.id));
   return body.result;
 }
+
 
 /** Requotes an old pending item without extending its five-minute review window. */
 export async function refreshSwapForUser(userId: string, id: string) {

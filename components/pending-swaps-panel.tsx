@@ -15,7 +15,8 @@ export function PendingSwapsPanel({ swaps, autoSignId }: { swaps: Pending[]; aut
   const autoStarted = useRef(false);
   const records = swaps.map(swap => ({ ...swap, summary: JSON.parse(swap.summary) as Summary }));
   async function submit(record: (typeof records)[number], signed: VersionedTransaction) {
-    const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ signedTransaction: encode(signed.serialize()) }) });
+    // Preserve the original wire bytes before the wallet receives a mutable transaction object.
+    const response = await fetch(`/api/swaps/${record.id}/submit`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ preSignTransaction: record.serializedTransaction, signedTransaction: encode(signed.serialize()) }) });
     const body = await response.json() as { signature?: string; error?: string };
     if (!response.ok || !body.signature) throw new Error(body.error ?? 'Submission failed.');
     return body.signature;
