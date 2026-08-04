@@ -8,7 +8,7 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | --- | --- | --- |
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
-| `hylo/core` | Hylo protocol discovery and integration guidance | assets, onchain addresses, operation guide, developer resources |
+| `hylo/core` | Hylo token operations through wallet-reviewed unsigned swaps | assets, buy asset, sell asset, operation guide |
 
 The shared famous-token catalog lives in
 `config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
@@ -31,9 +31,12 @@ Each registration function receives an opaque MCP server plus constrained contex
 
 ## Hylo package
 
-The Hylo package uses official Hylo documentation data for Solana mainnet
-programs, mints, product entry points, and SDK resources. Hylo docs currently
-state that public APIs are coming soon and direct developers to the Rust SDK, so
-the MCPBuddy package is intentionally read-only. Do not add transaction-building
-Hylo tools until the integration is backed by the SDK or a verified API and can
-preserve the same review-before-signing constraints used by Solana tools.
+The Hylo package is operation-first. It uses official Hylo documentation data
+for live token mints, then builds Jupiter-routed unsigned buy/sell transactions
+through the existing Solana review queue. Amounts are atomic integers because
+Hylo mints are not part of the global symbol allowlist and the MCP client must
+not guess decimals.
+
+Keep native Hylo mint, earn, leverage, and LST staking builders disabled until
+the integration is backed by Hylo's SDK or a verified API and can preserve the
+same owner-scoped, review-before-signing constraints used by Solana tools.

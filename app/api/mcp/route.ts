@@ -139,7 +139,7 @@ const handler = createMcpHandler(
     const solanaPluginContext = { currentUser, reviewUiUri: SWAP_REVIEW_UI_URI, reviewUi: SWAP_REVIEW_UI, reviewOutputSchema: transactionReviewOutputSchema, transactionStatusOutputSchema, appOrigin: () => env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun' };
     registerSolanaBasePlugin(server, solanaPluginContext);
     registerSolanaJupiterPlugin(server, solanaPluginContext);
-    registerHyloCorePlugin(server);
+    registerHyloCorePlugin(server, solanaPluginContext);
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',

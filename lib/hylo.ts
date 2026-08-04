@@ -15,11 +15,11 @@ export type HyloProgram = {
   address: string;
   solscanUrl: string;
 };
+export type LiveHyloAsset = HyloAsset & { status: 'live'; mint: string };
 
 export const HYLO_DOCS_URL = 'https://docs.hylo.so';
 export const HYLO_APP_URL = 'https://hylo.so';
-export const HYLO_DEVELOPER_TELEGRAM_URL = 'https://t.me/+2dNAkGO9UVZjYzQ5';
-export const HYLO_SDK_URL = 'https://github.com/hylo-so/sdk';
+export const WSOL_MINT = 'So11111111111111111111111111111111111111112';
 
 export const hyloPrograms: HyloProgram[] = [
   { name: 'Exchange', version: 'v0.1', address: 'HYEXCHtHkBagdStcJCp3xbbb9B7sdMdWXFNj6mdsG4hn', solscanUrl: 'https://solscan.io/account/HYEXCHtHkBagdStcJCp3xbbb9B7sdMdWXFNj6mdsG4hn' },
@@ -38,10 +38,16 @@ export const hyloAssets: HyloAsset[] = [
 ];
 
 export const hyloOperations = {
-  mint_hyusd: { title: 'Mint hyUSD', appUrl: HYLO_APP_URL, docsUrl: `${HYLO_DOCS_URL}/product-guide/stablecoin`, summary: 'Mint Hylo decentralized stablecoin from supported collateral through the Hylo app.' },
-  earn_ehyusd: { title: 'Mint eHYUSD', appUrl: `${HYLO_APP_URL}/earn`, docsUrl: `${HYLO_DOCS_URL}/product-guide/stablecoin`, summary: 'Deposit hyUSD into the Earn Pool to receive eHYUSD, a pro rata yield-bearing pool token.' },
-  mint_xasset: { title: 'Mint xAsset', appUrl: `${HYLO_APP_URL}/leverage`, docsUrl: `${HYLO_DOCS_URL}/product-guide/xassets`, summary: 'Mint liquidation-resistant leveraged long exposure such as xSOL through Hylo leverage flows.' },
-  liquid_staking: { title: 'Liquid staking', appUrl: HYLO_APP_URL, docsUrl: `${HYLO_DOCS_URL}/product-guide/liquid-staking-tokens`, summary: 'Use Hylo liquid staking token flows for hyloSOL or hyloSOL+.' },
+  buy_asset: { title: 'Buy a Hylo asset', appUrl: HYLO_APP_URL, docsUrl: `${HYLO_DOCS_URL}/introduction`, summary: 'Use create_hylo_buy_asset to create a Jupiter-routed unsigned swap into a live Hylo token mint.' },
+  sell_asset: { title: 'Sell a Hylo asset', appUrl: HYLO_APP_URL, docsUrl: `${HYLO_DOCS_URL}/introduction`, summary: 'Use create_hylo_sell_asset to create a Jupiter-routed unsigned swap out of a live Hylo token mint.' },
+  native_hylo: { title: 'Native Hylo protocol actions', appUrl: HYLO_APP_URL, docsUrl: `${HYLO_DOCS_URL}/developer-resources`, summary: 'Native mint, earn, leverage, and LST staking transaction builders require Hylo SDK/API integration. MCPBuddy currently exposes direct swap operations and links native actions to the Hylo app.' },
 } as const;
 
 export type HyloOperation = keyof typeof hyloOperations;
+
+export function liveHyloAsset(symbol: string): LiveHyloAsset {
+  const asset = hyloAssets.find(item => item.symbol.toUpperCase() === symbol.trim().toUpperCase());
+  if (!asset) throw new Error(`Unsupported Hylo asset "${symbol}". Call list_hylo_assets first.`);
+  if (asset.status !== 'live' || !asset.mint) throw new Error(`${asset.symbol} is not currently listed as a live Hylo mint.`);
+  return asset as LiveHyloAsset;
+}
