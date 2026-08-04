@@ -78,6 +78,7 @@ export function DashboardTools() {
 
   const visiblePlugins = activeCategory === 'All' ? plugins : plugins.filter(plugin => plugin.category === activeCategory);
   const selectedCount = selected.size;
+  const visibleToolCount = visiblePlugins.reduce((count, plugin) => count + plugin.tools.length, 0);
 
   const toggleTool = (name: string) => setSelected(current => {
     const next = new Set(current);
@@ -116,55 +117,65 @@ export function DashboardTools() {
         <button type="button" onClick={() => void exportSelected()} disabled={!selectedCount}>Export selected ({selectedCount})</button>
       </header>
 
-      <div className="tool-tabs" role="tablist" aria-label="Tool categories">
-        {categories.map(category => (
-          <button key={category} type="button" role="tab" aria-selected={activeCategory === category} className={activeCategory === category ? 'active' : undefined} onClick={() => setActiveCategory(category)}>
-            {category}
-          </button>
-        ))}
-      </div>
+      <div className="tool-workspace">
+        <aside className="tool-sidebar" aria-label="Tool categories and export status">
+          <div className="tool-tabs" role="tablist" aria-label="Tool categories">
+            {categories.map(category => (
+              <button key={category} type="button" role="tab" aria-selected={activeCategory === category} className={activeCategory === category ? 'active' : undefined} onClick={() => setActiveCategory(category)}>
+                <span>{category}</span>
+                <small>{category === 'All' ? allToolNames.length : plugins.filter(plugin => plugin.category === category).reduce((count, plugin) => count + plugin.tools.length, 0)}</small>
+              </button>
+            ))}
+          </div>
+          <div className="tool-selection-summary">
+            <small>SELECTED</small>
+            <b>{selectedCount} / {allToolNames.length}</b>
+            <span>{visiblePlugins.length} plugin{visiblePlugins.length === 1 ? '' : 's'} · {visibleToolCount} visible tool{visibleToolCount === 1 ? '' : 's'}</span>
+          </div>
+        </aside>
 
-      <div className="tool-plugin-list">
-        {visiblePlugins.map(plugin => {
-          const pluginToolNames = plugin.tools.map(tool => tool.name);
-          const pluginSelectedCount = pluginToolNames.filter(name => selected.has(name)).length;
-          const isOpen = open.has(plugin.id);
-          const allSelected = pluginSelectedCount === plugin.tools.length;
+        <div className="tool-plugin-list">
+          {visiblePlugins.map(plugin => {
+            const pluginToolNames = plugin.tools.map(tool => tool.name);
+            const pluginSelectedCount = pluginToolNames.filter(name => selected.has(name)).length;
+            const isOpen = open.has(plugin.id);
+            const allSelected = pluginSelectedCount === plugin.tools.length;
 
-          return (
-            <section className="tool-plugin" key={plugin.id}>
-              <div className="tool-plugin-head">
-                <button type="button" className="tool-plugin-toggle" aria-expanded={isOpen} onClick={() => toggleOpen(plugin.id)}>
-                  <span>
-                    <small>{plugin.id}</small>
-                    <b>{plugin.label}</b>
-                    <em>{plugin.summary}</em>
-                  </span>
-                  <i aria-hidden="true">{isOpen ? 'Hide' : 'Show'}</i>
-                </button>
-                <button type="button" className="tool-plugin-select" onClick={() => togglePlugin(plugin)}>
-                  {allSelected ? 'Clear plugin' : 'Select plugin'} ({pluginSelectedCount}/{plugin.tools.length})
-                </button>
-              </div>
+            return (
+              <section className="tool-plugin" key={plugin.id}>
+                <div className="tool-plugin-head">
+                  <button type="button" className="tool-plugin-toggle" aria-expanded={isOpen} onClick={() => toggleOpen(plugin.id)}>
+                    <span>
+                      <small>{plugin.id}</small>
+                      <b>{plugin.label}</b>
+                      <em>{plugin.summary}</em>
+                    </span>
+                    <i aria-hidden="true">{isOpen ? 'Hide' : 'Show'}</i>
+                  </button>
+                  <button type="button" className="tool-plugin-select" onClick={() => togglePlugin(plugin)}>
+                    {allSelected ? 'Clear plugin' : 'Select plugin'} ({pluginSelectedCount}/{plugin.tools.length})
+                  </button>
+                </div>
 
-              {isOpen && (
-                <ol className="tool-list">
-                  {plugin.tools.map(tool => (
-                    <li key={tool.name}>
-                      <label className="tool-card ui-interactive-card">
-                        <input type="checkbox" checked={selected.has(tool.name)} onChange={() => toggleTool(tool.name)} />
-                        <span className="tool-card-content">
-                          <code className="endpoint">{tool.name}</code>
-                          <span>{tool.description}</span>
-                        </span>
-                      </label>
-                    </li>
-                  ))}
-                </ol>
-              )}
-            </section>
-          );
-        })}
+                {isOpen && (
+                  <ol className="tool-list">
+                    {plugin.tools.map(tool => (
+                      <li key={tool.name}>
+                        <label className="tool-card ui-interactive-card">
+                          <input type="checkbox" checked={selected.has(tool.name)} onChange={() => toggleTool(tool.name)} />
+                          <span className="tool-card-content">
+                            <code className="endpoint">{tool.name}</code>
+                            <span>{tool.description}</span>
+                          </span>
+                        </label>
+                      </li>
+                    ))}
+                  </ol>
+                )}
+              </section>
+            );
+          })}
+        </div>
       </div>
 
       {status && <p className="swap-status" role="status">{status}</p>}
