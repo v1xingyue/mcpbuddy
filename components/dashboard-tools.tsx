@@ -44,8 +44,8 @@ const plugins: Plugin[] = [
   {
     id: 'hylo/core',
     label: 'Hylo operations',
-    category: 'Hylo',
-    summary: 'Operation-first Hylo buy/sell tools that reuse wallet review.',
+    category: 'Solana',
+    summary: 'Solana protocol tools for Hylo buy/sell operations through wallet review.',
     tools: [
       { name: 'list_hylo_assets(category)', description: 'List live Hylo asset symbols and mints before an operation.' },
       { name: 'create_hylo_buy_asset(assetSymbol, inputMint, inputAmountAtomic, slippageBps)', description: 'Create an unsigned swap into a Hylo asset for wallet review.' },
@@ -111,7 +111,7 @@ export function DashboardTools() {
         <div>
           <p className="eyebrow">MCP TOOL CATALOG</p>
           <h2>Choose what to export.</h2>
-          <p className="tools-intro">Browse by category, fold plugins you do not need, and select a whole plugin when an agent needs that capability set.</p>
+          <p className="tools-intro">Browse by category, fold plugins you do not need, and select a whole plugin when an agent needs that capability set. Hylo lives under Solana because its tools operate on Solana assets.</p>
         </div>
         <button type="button" onClick={() => void exportSelected()} disabled={!selectedCount}>Export selected ({selectedCount})</button>
       </header>
