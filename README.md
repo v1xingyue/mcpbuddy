@@ -34,6 +34,15 @@ symbol- and mint-based swap creation. Both packages receive the authenticated
 user only through the route's verified MCP context; neither has a private key
 or can sign or broadcast a transaction.
 
+The base package also supports `create_solana_sol_transfer(recipient, amount)`
+for native SOL. It creates the same five-minute, account-owned unsigned review
+record as an SPL transfer. The Jupiter package offers
+`quote_solana_swap(inputToken, outputToken, amount, slippageBps)` for a
+read-only expected/minimum-output quote before `create_solana_swap`; quoting
+does not create any pending transaction. See
+[plugin development](docs/mcp-tool-plugins.md) for package boundaries and the
+checklist for adding tools.
+
 Call `list_solana_swap_tokens()` before creating a trade. It returns the supported mainnet assets with their stable symbols, mint addresses, and decimals. The public MCP tool `create_solana_swap(inputToken, outputToken, amount, slippageBps)` accepts those symbols (for example, `SOL`, `USDC`) and a human-readable decimal amount (for example, `"0.1"`), so an external AI never has to guess a mint or its decimal precision. The server only permits tokens in this allowlist, converts the amount exactly to atomic units, and builds a Jupiter-routed swap for the account's bound wallet. The tool has no signing key and never broadcasts a transaction.
 
 It instead creates a five-minute pending item under **Account → Pending swaps**. Solana transaction blockhashes are much shorter-lived, so MCPBuddy refreshes an older transaction immediately before signing and asks the user to review the refreshed quote; it never silently changes a transaction that is about to be signed. The signing queue shows the payment, expected and minimum received amount, slippage, fee payer, involved program count, route, and a SHA-256 transaction-message fingerprint. The wallet signs the exact Solana message bytes offline; MCPBuddy verifies the 64-byte signature against the bound wallet, attaches it to the server-stored wire transaction, then broadcasts those exact reviewed bytes. See [offline-signing design](docs/solana-offline-signing.md) for the protocol and security invariants.

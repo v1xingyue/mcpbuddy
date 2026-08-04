@@ -1,9 +1,12 @@
 import { z } from 'zod';
-import { createSwapByMintForUser, createSwapForUser, quoteableSolanaSwapTokens } from '@/lib/solana-swap';
+import { createSwapByMintForUser, createSwapForUser, quoteableSolanaSwapTokens, quoteSolanaSwapForUser } from '@/lib/solana-swap';
 import type { McpPluginContext, McpToolServer } from '@/lib/mcp/plugins/types';
 
 /** Jupiter-specific discovery and unsigned routing tools. */
 export function registerSolanaJupiterPlugin(server: McpToolServer, context: McpPluginContext) {
+  server.registerTool('quote_solana_swap', { title: 'Quote Solana swap', description: 'Fetch a read-only Jupiter quote for two supported symbols. It does not create, sign, or broadcast a transaction.', inputSchema: { inputToken: z.string().min(1).max(20), outputToken: z.string().min(1).max(20), amount: z.string().regex(/^\d+(\.\d+)?$/), slippageBps: z.number().int().min(1).max(1000).default(50) }, outputSchema: { inputToken: z.string(), outputToken: z.string(), inputAmount: z.string(), expectedOutput: z.string(), minimumOutput: z.string(), slippageBps: z.number(), priceImpactPct: z.string().nullable(), route: z.array(z.string()), quotedAt: z.string().datetime() } }, async (args: any, extra: any) => {
+    try { const user = await context.currentUser(extra.authInfo?.extra?.githubId); const quote = await quoteSolanaSwapForUser(user.id, args); return { content: [{ type: 'text', text: JSON.stringify(quote) }], structuredContent: quote }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not quote swap.' }], isError: true }; }
+  });
   server.tool('list_solana_swap_tokens', 'List configured and account-whitelisted Solana tokens currently quoteable by Jupiter. Call this before creating a symbol-based swap.', { inputToken: z.string().min(1).max(20).default('USDC'), amount: z.string().regex(/^\d+(\.\d+)?$/).default('1') }, async ({ inputToken, amount }: { inputToken: string; amount: string }, extra: any) => {
     try { const user = await context.currentUser(extra.authInfo?.extra?.githubId); const tokens = await quoteableSolanaSwapTokens(user.id, inputToken, amount); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), inputToken, amount, tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not validate Jupiter token routes.' }], isError: true }; }
   });

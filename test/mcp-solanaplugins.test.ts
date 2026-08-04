@@ -17,7 +17,7 @@ describe('Solana MCP tool packages', () => {
     const { server, calls } = recorder();
     registerSolanaBasePlugin(server, context);
     registerSolanaJupiterPlugin(server, context);
-    expect(calls.filter(call => call.name.includes('swap')).map(call => call.name)).toEqual(['solana-swap-review', 'list_solana_swap_tokens', 'create_solana_swap', 'create_solana_swap_by_mint']);
-    expect(calls.map(call => call.name)).toEqual(expect.arrayContaining(['get_wallet_address', 'get_solana_asset_balances', 'create_solana_token_transfer', 'get_solana_transaction_status', 'list_solana_swap_tokens']));
+    expect(calls.filter(call => call.name.includes('swap')).map(call => call.name)).toEqual(['solana-swap-review', 'quote_solana_swap', 'list_solana_swap_tokens', 'create_solana_swap', 'create_solana_swap_by_mint']);
+    expect(calls.map(call => call.name)).toEqual(expect.arrayContaining(['get_wallet_address', 'get_solana_asset_balances', 'create_solana_sol_transfer', 'create_solana_token_transfer', 'get_solana_transaction_status', 'list_solana_swap_tokens', 'quote_solana_swap']));
   });
 });

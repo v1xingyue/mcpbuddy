@@ -157,6 +157,37 @@ export async function createTokenTransferForUser(userId: string, args: { token: 
   return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
 }
 
+/** Creates an account-owned, unsigned native-SOL transfer for the same review-and-sign flow as swaps. */
+export async function createSolTransferForUser(userId: string, args: { recipient: string; amount: string }) {
+  const amount = toAtomicAmount(args.amount, 9);
+  const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, userId)).limit(1);
+  if (!wallet) throw new Error('No Solana wallet is bound to this account. Bind a wallet before creating a transfer.');
+  let recipient: PublicKey;
+  try { recipient = new PublicKey(args.recipient); } catch { throw new Error('recipient must be a valid Solana wallet address.'); }
+  if (recipient.toBase58() === wallet.address) throw new Error('Recipient must be different from the bound wallet.');
+  const [balance, blockhash] = await Promise.all([rpc<{ value: number }>('getBalance', [wallet.address, { commitment: 'confirmed' }]), rpc<{ value: { blockhash: string } }>('getLatestBlockhash', [{ commitment: 'confirmed' }])]);
+  if (BigInt(balance.value) < BigInt(amount)) throw new Error('Insufficient SOL balance for this transfer and its network fee.');
+  const instruction = SystemProgram.transfer({ fromPubkey: new PublicKey(wallet.address), toPubkey: recipient, lamports: BigInt(amount) });
+  const serializedTransaction = Buffer.from(new VersionedTransaction(new TransactionMessage({ payerKey: new PublicKey(wallet.address), recentBlockhash: blockhash.value.blockhash, instructions: [instruction] }).compileToV0Message()).serialize()).toString('base64');
+  const details = inspect(serializedTransaction);
+  const summary: SigningSummary = { kind: 'transfer', inputToken: 'SOL', outputToken: 'SOL', inputMint: WSOL_MINT, outputMint: WSOL_MINT, inputAmount: args.amount, inputAmountAtomic: amount, expectedOutputAtomic: amount, minimumOutputAtomic: amount, slippageBps: 0, priceImpactPct: null, route: [], recipient: recipient.toBase58(), ...details };
+  const expiresAt = new Date(Date.now() + 5 * 60_000);
+  const [row] = await getDb().insert(swapTransactions).values({ userId, walletAddress: wallet.address, serializedTransaction, messageBase64: details.messageBase64, transactionDigest: details.transactionDigest, summary: JSON.stringify(summary), expiresAt }).returning({ id: swapTransactions.id });
+  return { transactionId: row.id, expiresAt: expiresAt.toISOString(), summary };
+}
+
+/** Read-only Jupiter quote. It builds no transaction and never accesses a signing capability. */
+export async function quoteSolanaSwapForUser(userId: string, args: { inputToken: string; outputToken: string; amount: string; slippageBps: number }) {
+  const availableTokens = await swapTokensForUser(userId); const input = token(args.inputToken, availableTokens); const output = token(args.outputToken, availableTokens);
+  if (input.mint === output.mint) throw new Error('Choose two different tokens.');
+  if (!Number.isInteger(args.slippageBps) || args.slippageBps < 1 || args.slippageBps > 1_000) throw new Error('slippageBps must be an integer from 1 to 1000.');
+  const amount = toAtomicAmount(args.amount, input.decimals); const query = new URLSearchParams({ inputMint: input.mint, outputMint: output.mint, amount, slippageBps: String(args.slippageBps) });
+  const response = await fetch(`${JUPITER}/quote?${query}`, { headers: headers(), cache: 'no-store' });
+  if (!response.ok) throw new Error(`Jupiter quote failed (${response.status}).`);
+  const quote = await response.json() as JupiterQuote;
+  return { inputToken: input.symbol, outputToken: output.symbol, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutput: fromAtomicAmount(quote.outAmount, output.decimals), expectedOutputAtomic: quote.outAmount, minimumOutput: fromAtomicAmount(quote.otherAmountThreshold, output.decimals), minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], quotedAt: new Date().toISOString() };
+}
+
 export async function createSwapForUser(userId: string, args: { inputToken: string; outputToken: string; amount: string; slippageBps: number }) {
   const availableTokens = await swapTokensForUser(userId);
   const input = token(args.inputToken, availableTokens); const output = token(args.outputToken, availableTokens);
