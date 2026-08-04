@@ -40,8 +40,10 @@ unsigned transactions into or out of live Hylo mints such as hyUSD, eHYUSD,
 hyloSOL, hyloSOL+, xSOL, and cbBTC. The tools reuse the same five-minute,
 account-owned review/sign flow as Solana swaps; MCPBuddy never receives a
 private key or broadcasts before wallet review. `list_hylo_assets` returns the
-supported Hylo symbols/mints, and `get_hylo_operation_guide` is the single
-guide-style helper for choosing the right operation. Native Hylo
+supported Hylo symbols/mints catalog, while `get_hylo_asset_balances` reads the
+current account's bound wallet for nonzero Hylo token holdings.
+`get_hylo_operation_guide` is the single guide-style helper for choosing the
+right operation. Native Hylo
 mint/earn/leverage builders are intentionally not exposed until backed by a
 verified Hylo SDK/API integration.
 

@@ -48,6 +48,7 @@ const plugins: Plugin[] = [
     summary: 'Solana protocol tools for Hylo buy/sell operations through wallet review.',
     tools: [
       { name: 'list_hylo_assets(category)', description: 'List live Hylo asset symbols and mints before an operation.' },
+      { name: 'get_hylo_asset_balances()', description: 'Read Hylo token balances in the bound Solana wallet.' },
       { name: 'create_hylo_buy_asset(assetSymbol, inputMint, inputAmountAtomic, slippageBps)', description: 'Create an unsigned swap into a Hylo asset for wallet review.' },
       { name: 'create_hylo_sell_asset(assetSymbol, outputMint, assetAmountAtomic, slippageBps)', description: 'Create an unsigned swap out of a Hylo asset for wallet review.' },
       { name: 'get_hylo_operation_guide(operation)', description: 'Show the matching Hylo MCP operation.' },

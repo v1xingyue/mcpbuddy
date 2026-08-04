@@ -13,7 +13,7 @@ describe('Hylo MCP tool package', () => {
   it('registers Hylo operation tools', () => {
     const { calls, server } = recorder();
     registerHyloCorePlugin(server, context);
-    expect(calls.map(call => call.name)).toEqual(['list_hylo_assets', 'create_hylo_buy_asset', 'create_hylo_sell_asset', 'get_hylo_operation_guide']);
+    expect(calls.map(call => call.name)).toEqual(['list_hylo_assets', 'get_hylo_asset_balances', 'create_hylo_buy_asset', 'create_hylo_sell_asset', 'get_hylo_operation_guide']);
   });
 
   it('keeps documented live assets and programs addressable', () => {

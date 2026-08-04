@@ -8,7 +8,7 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | --- | --- | --- |
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
-| `hylo/core` | Solana protocol plugin for Hylo token operations through wallet-reviewed unsigned swaps | assets, buy asset, sell asset, operation guide |
+| `hylo/core` | Solana protocol plugin for Hylo token operations through wallet-reviewed unsigned swaps | asset catalog, wallet balances, buy asset, sell asset, operation guide |
 
 The shared famous-token catalog lives in
 `config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
@@ -36,6 +36,8 @@ official Hylo documentation data for live token mints, then builds
 Jupiter-routed unsigned buy/sell transactions through the existing Solana
 review queue. Amounts are atomic integers because Hylo mints are not part of
 the global symbol allowlist and the MCP client must not guess decimals.
+`list_hylo_assets` is the supported-asset catalog; `get_hylo_asset_balances`
+is the account-scoped wallet holding reader.
 
 Keep native Hylo mint, earn, leverage, and LST staking builders disabled until
 the integration is backed by Hylo's SDK or a verified API and can preserve the

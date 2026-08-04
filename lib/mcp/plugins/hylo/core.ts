@@ -1,4 +1,9 @@
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { env } from '@/lib/config';
+import { getDb } from '@/lib/db';
+import { walletBindings } from '@/lib/db/schema';
+import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
 import type { McpPluginContext, McpToolServer } from '@/lib/mcp/plugins/types';
 import { HYLO_DOCS_URL, WSOL_MINT, hyloAssets, hyloOperations, liveHyloAsset } from '@/lib/hylo';
 import { createSwapByMintForUser } from '@/lib/solana-swap';
@@ -33,6 +38,37 @@ export function registerHyloCorePlugin(server: McpToolServer, context: McpPlugin
   }, async ({ category }: { category?: string }) => {
     const assets = category ? hyloAssets.filter(asset => asset.category === category) : hyloAssets;
     return { content: [{ type: 'text', text: JSON.stringify({ assets }) }], structuredContent: { assets } };
+  });
+
+  server.registerTool('get_hylo_asset_balances', {
+    title: 'Get Hylo asset balances',
+    description: 'Read the bound wallet balance for live Hylo token mints. Read-only; it cannot sign or submit transactions.',
+    inputSchema: {},
+    outputSchema: {
+      walletAddress: z.string(),
+      assets: z.array(z.object({
+        symbol: z.string(),
+        name: z.string(),
+        category: z.string().optional(),
+        mint: z.string().nullable(),
+        balance: z.string(),
+        priceUsd: z.number().nullable(),
+        valueUsd: z.number().nullable(),
+      })),
+    },
+  }, async (_args: unknown, extra: any) => {
+    const user = await context.currentUser(extra.authInfo?.extra?.githubId);
+    const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1);
+    if (!wallet) return { content: [{ type: 'text', text: 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
+    const liveAssets = hyloAssets.flatMap(asset => asset.status === 'live' && asset.mint ? [{ symbol: asset.symbol, name: asset.name, category: asset.category, tags: ['hylo'], mint: asset.mint, decimals: 0, coingeckoId: '' }] : []);
+    try {
+      const assets = await getMainSolanaAssetBalances(wallet.address, env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com', liveAssets);
+      const hyloMintSet = new Set(liveAssets.map(asset => asset.mint));
+      const hyloBalances = assets.filter(asset => asset.mint && hyloMintSet.has(asset.mint));
+      return { content: [{ type: 'text', text: JSON.stringify({ walletAddress: wallet.address, assets: hyloBalances }) }], structuredContent: { walletAddress: wallet.address, assets: hyloBalances } };
+    } catch (error) {
+      return { content: [{ type: 'text', text: `Could not retrieve Hylo asset balances: ${error instanceof Error ? error.message : 'Unknown error.'}` }], isError: true };
+    }
   });
 
   server.registerTool('create_hylo_buy_asset', {
