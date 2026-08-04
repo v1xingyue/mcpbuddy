@@ -7,11 +7,10 @@ import { verifyMcpToken } from '@/lib/mcp-auth';
 import { getDb } from '@/lib/db';
 import { authIdentities, platformConnections, publishedPages, users, walletBindings, walletTokenWatchlist } from '@/lib/db/schema';
 import { env } from '@/lib/config';
-import { getMainSolanaAssetBalances } from '@/lib/solana-assets';
-import { solanaSwapTokens } from '@/lib/solana-assets';
 import { contextPackForMcp } from '@/lib/context-pack';
 import { publicHtmlBlobPath, publicHtmlSchema } from '@/lib/public-html';
-import { createSwapForUser, createSwapByMintForUser, createTokenTransferForUser, quoteableSolanaSwapTokens, swapStatusForUser } from '@/lib/solana-swap';
+import { registerSolanaBasePlugin } from '@/lib/mcp/plugins/solana/base';
+import { registerSolanaJupiterPlugin } from '@/lib/mcp/plugins/solana/jupiter';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -136,23 +135,9 @@ async function currentUser(accountId: unknown) {
 
 const handler = createMcpHandler(
   (server) => {
-    server.registerResource(
-      'solana-swap-review',
-      SWAP_REVIEW_UI_URI,
-      {
-        title: 'Solana swap review',
-        description: 'Interactive review card for an unsigned Solana swap.',
-        mimeType: 'text/html+skybridge',
-        _meta: { 'openai/widgetPrefersBorder': true, 'openai/widgetAccessible': true },
-      },
-      async () => ({ contents: [{ uri: SWAP_REVIEW_UI_URI, mimeType: 'text/html+skybridge', text: SWAP_REVIEW_UI }] }),
-    );
-    server.registerTool('create_solana_token_transfer', { title: 'Create Solana token transfer', description: 'Create an unsigned SPL-token transfer for review and wallet signing. Call list_solana_swap_tokens first; the recipient must already have a token account for this mint.', inputSchema: { token: z.string().min(1).max(20), recipient: z.string().min(32).max(64), amount: z.string().regex(/^\d+(\.\d+)?$/) }, outputSchema: transactionReviewOutputSchema, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI, 'ui/resourceUri': SWAP_REVIEW_UI_URI } }, async (args, extra) => {
-      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await createTokenTransferForUser(user.id, args); const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'; const reviewUrl = `${origin}/account/wallet?swap=${result.transactionId}`; return { content: [{ type: 'text', text: `Unsigned ${result.summary.inputAmount} ${result.summary.inputToken} transfer created for ${args.recipient}. Open ${reviewUrl} to review and sign.` }], structuredContent: { ...result, reviewUrl, signingRequired: true }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI } }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create token transfer.' }], isError: true }; }
-    });
-    server.registerTool('get_solana_transaction_status', { title: 'Get Solana transaction status', description: 'Read the status of one account-owned pending Solana transaction. Use the transactionId returned by a create_solana_swap or transfer tool.', inputSchema: { transactionId: z.string().uuid() }, outputSchema: transactionStatusOutputSchema }, async ({ transactionId }, extra) => {
-      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await swapStatusForUser(user.id, transactionId); return { content: [{ type: 'text', text: JSON.stringify(result) }], structuredContent: result }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not read transaction status.' }], isError: true }; }
-    });
+    const solanaPluginContext = { currentUser, reviewUiUri: SWAP_REVIEW_UI_URI, reviewUi: SWAP_REVIEW_UI, reviewOutputSchema: transactionReviewOutputSchema, transactionStatusOutputSchema, appOrigin: () => env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun' };
+    registerSolanaBasePlugin(server, solanaPluginContext);
+    registerSolanaJupiterPlugin(server, solanaPluginContext);
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',
@@ -164,82 +149,6 @@ const handler = createMcpHandler(
         return { content: [{ type: 'text', text: `Hello received from ${platform}. MCPBuddy has confirmed this connection for ${user.name ?? 'your account'}.` }] };
       },
     );
-    server.tool(
-      'get_wallet_address',
-      'Return the verified Solana wallet address bound to the current MCPBuddy account.',
-      {},
-      async (_args, extra) => {
-        const user = await currentUser(extra.authInfo?.extra?.githubId);
-        const [wallet] = await getDb().select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1);
-        return { content: [{ type: 'text', text: wallet?.address ?? 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
-      },
-    );
-    server.tool(
-      'get_solana_asset_balances',
-      'Return balances, current USD prices, and USD valuations for the configured famous Solana-token list and this account\'s tracked-token whitelist in the bound wallet. Read-only; it cannot sign or submit transactions.',
-      {},
-      async (_args, extra) => {
-        const user = await currentUser(extra.authInfo?.extra?.githubId);
-        const db = getDb();
-        const [[wallet], watchlist] = await Promise.all([
-          db.select({ address: walletBindings.address }).from(walletBindings).where(eq(walletBindings.userId, user.id)).limit(1),
-          db.select({ mint: walletTokenWatchlist.mint, symbol: walletTokenWatchlist.symbol, name: walletTokenWatchlist.name }).from(walletTokenWatchlist).where(eq(walletTokenWatchlist.userId, user.id)),
-        ]);
-        if (!wallet) return { content: [{ type: 'text', text: 'No Solana wallet is bound to this account yet. Bind one from the MCPBuddy dashboard first.' }] };
-        try {
-          const customAssets = watchlist.map(item => ({ ...item, decimals: 0, coingeckoId: '' }));
-          const assets = await getMainSolanaAssetBalances(wallet.address, env.SOLANA_RPC_URL ?? 'https://api.mainnet-beta.solana.com', customAssets);
-          return { content: [{ type: 'text', text: JSON.stringify({ walletAddress: wallet.address, quoteCurrency: 'USD', assets }) }] };
-        } catch (error) {
-          const message = error instanceof Error ? error.message : 'Unknown error.';
-          return { content: [{ type: 'text', text: `Could not retrieve Solana asset balances: ${message}` }], isError: true };
-        }
-      },
-    );
-    server.tool(
-      'list_solana_swap_tokens',
-      'List configured Solana assets and this account\'s whitelisted tokens currently quoteable by Jupiter from the supplied input token and amount. Call this before creating a swap; use each returned symbol, not a guessed mint address.',
-      { inputToken: z.string().min(1).max(20).default('USDC').describe('Input token symbol used for live route validation; defaults to USDC.'), amount: z.string().regex(/^\d+(\.\d+)?$/).default('1').describe('Human-readable input amount used for live route validation; defaults to 1.') },
-      async ({ inputToken, amount }, extra) => {
-        try { const user = await currentUser(extra.authInfo?.extra?.githubId); const tokens = await quoteableSolanaSwapTokens(user.id, inputToken, amount); return { content: [{ type: 'text', text: JSON.stringify({ cluster: 'mainnet-beta', validatedAt: new Date().toISOString(), inputToken, amount, tokens: tokens.map(({ symbol, name, mint, decimals }) => ({ symbol, name, mint, decimals })) }) }] }; }
-        catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not validate Jupiter token routes.' }], isError: true }; }
-      },
-    );
-    server.registerTool(
-      'create_solana_swap',
-      {
-        title: 'Create Solana swap',
-        description: 'Create a Jupiter-routed Solana swap as an unsigned transaction for the bound wallet. Call list_solana_swap_tokens first. It never receives a private key and never broadcasts. The user has five minutes to review it; MCPBuddy refreshes the short-lived chain transaction before signing when needed.',
-        inputSchema: {
-          inputToken: z.string().min(1).max(20).describe('Input token symbol returned by list_solana_swap_tokens, for example SOL or USDC.'),
-          outputToken: z.string().min(1).max(20).describe('Output token symbol returned by list_solana_swap_tokens.'),
-          amount: z.string().regex(/^\d+(\.\d+)?$/).describe('Positive human-readable token amount, for example "0.1" SOL or "25" USDC.'),
-          slippageBps: z.number().int().min(1).max(1000).default(50).describe('Maximum slippage in basis points; 50 = 0.5%.'),
-        },
-        outputSchema: transactionReviewOutputSchema,
-        // `openai/outputTemplate` is used by ChatGPT Apps; `ui/resourceUri` lets
-        // other MCP Apps clients discover the same resource without parsing text.
-        _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI, 'ui/resourceUri': SWAP_REVIEW_UI_URI },
-      },
-      async (args, extra) => {
-        try {
-          const user = await currentUser(extra.authInfo?.extra?.githubId);
-          const result = await createSwapForUser(user.id, args);
-          const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun';
-          const output = { ...result, reviewUrl: `${origin}/account/wallet?swap=${result.transactionId}`, signingRequired: true, nextStep: 'Open reviewUrl to inspect this immutable signing summary and trigger your wallet’s review-and-sign flow.' };
-          return {
-            content: [{ type: 'text', text: `Unsigned ${result.summary.inputToken} → ${result.summary.outputToken} swap created. Open ${output.reviewUrl} to review and trigger signing; it expires at ${result.expiresAt}.` }],
-            structuredContent: output,
-            _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI },
-          };
-        } catch (error) {
-          return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create swap transaction.' }], isError: true };
-        }
-      },
-    );
-    server.registerTool('create_solana_swap_by_mint', { title: 'Create Solana swap by mint', description: 'Create an unsigned Jupiter swap using arbitrary Solana mints. amount is an atomic integer, not a display decimal; for example 0.5 USDC is 500000.', inputSchema: { inputMint: z.string().min(32).max(64), outputMint: z.string().min(32).max(64), amount: z.string().regex(/^\d+$/).describe('Positive atomic token amount.'), slippageBps: z.number().int().min(1).max(1000).default(50) }, outputSchema: transactionReviewOutputSchema, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI, 'ui/resourceUri': SWAP_REVIEW_UI_URI } }, async (args, extra) => {
-      try { const user = await currentUser(extra.authInfo?.extra?.githubId); const result = await createSwapByMintForUser(user.id, args); const origin = env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun'; const reviewUrl = `${origin}/account/wallet?swap=${result.transactionId}`; return { content: [{ type: 'text', text: `Unsigned mint-to-mint swap created. Atomic input amount: ${args.amount}. Open ${reviewUrl} to review and sign.` }], structuredContent: { ...result, reviewUrl, signingRequired: true }, _meta: { 'openai/outputTemplate': SWAP_REVIEW_UI_URI } }; } catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not create mint-based swap.' }], isError: true }; }
-    });
     server.tool(
       'user_info',
       'Read the current user’s private AI Context Pack before starting work. It contains their profile, working preferences, hard limits, current goals, project notes, and tool guidance.',

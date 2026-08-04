@@ -24,6 +24,16 @@ Run `drizzle/0000_initial.sql` once against Vercel Postgres. The unique `(kind, 
 
 ## Solana swaps
 
+### MCP tool packages
+
+MCP tool registration is organized as packages under `lib/mcp/plugins/`. The
+`solana/base` package contains bound-wallet, portfolio, unsigned SPL transfer,
+transaction-status, and MCP Apps review-card capabilities. The
+`solana/jupiter` package contains live Jupiter route discovery plus unsigned
+symbol- and mint-based swap creation. Both packages receive the authenticated
+user only through the route's verified MCP context; neither has a private key
+or can sign or broadcast a transaction.
+
 Call `list_solana_swap_tokens()` before creating a trade. It returns the supported mainnet assets with their stable symbols, mint addresses, and decimals. The public MCP tool `create_solana_swap(inputToken, outputToken, amount, slippageBps)` accepts those symbols (for example, `SOL`, `USDC`) and a human-readable decimal amount (for example, `"0.1"`), so an external AI never has to guess a mint or its decimal precision. The server only permits tokens in this allowlist, converts the amount exactly to atomic units, and builds a Jupiter-routed swap for the account's bound wallet. The tool has no signing key and never broadcasts a transaction.
 
 It instead creates a five-minute pending item under **Account → Pending swaps**. Solana transaction blockhashes are much shorter-lived, so MCPBuddy refreshes an older transaction immediately before signing and asks the user to review the refreshed quote; it never silently changes a transaction that is about to be signed. The signing queue shows the payment, expected and minimum received amount, slippage, fee payer, involved program count, route, and a SHA-256 transaction-message fingerprint. The wallet signs the exact Solana message bytes offline; MCPBuddy verifies the 64-byte signature against the bound wallet, attaches it to the server-stored wire transaction, then broadcasts those exact reviewed bytes. See [offline-signing design](docs/solana-offline-signing.md) for the protocol and security invariants.
