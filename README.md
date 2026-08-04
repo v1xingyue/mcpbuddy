@@ -34,6 +34,14 @@ symbol- and mint-based swap creation. Both packages receive the authenticated
 user only through the route's verified MCP context; neither has a private key
 or can sign or broadcast a transaction.
 
+`hylo/core` exposes read-only Hylo protocol discovery tools:
+`list_hylo_assets`, `get_hylo_onchain_addresses`,
+`get_hylo_operation_guide`, and `get_hylo_developer_resources`. The tools list
+documented Hylo assets such as hyUSD, eHYUSD, hyloSOL, hyloSOL+, xSOL, and
+cbBTC, return official Solana program and mint addresses, and point users to
+the Hylo app/docs/SDK. Hylo documentation says public APIs are coming soon, so
+MCPBuddy does not currently build, sign, or submit Hylo transactions.
+
 The base package also supports `create_solana_sol_transfer(recipient, amount)`
 for native SOL. It creates the same five-minute, account-owned unsigned review
 record as an SPL transfer. The Jupiter package offers

@@ -8,6 +8,7 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | --- | --- | --- |
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
+| `hylo/core` | Hylo protocol discovery and integration guidance | assets, onchain addresses, operation guide, developer resources |
 
 The shared famous-token catalog lives in
 `config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
@@ -27,3 +28,12 @@ part of the public MCP contract.
 5. Update the dashboard catalog, public documentation, and focused Vitest coverage.
 
 Each registration function receives an opaque MCP server plus constrained context from `lib/mcp/plugins/types.ts`. Keep shared context minimal; never pass secrets, reusable authorizations, signed transaction bytes, or raw database access to an Apps UI. Run `npm test` and `npm run build` before submitting changes.
+
+## Hylo package
+
+The Hylo package uses official Hylo documentation data for Solana mainnet
+programs, mints, product entry points, and SDK resources. Hylo docs currently
+state that public APIs are coming soon and direct developers to the Rust SDK, so
+the MCPBuddy package is intentionally read-only. Do not add transaction-building
+Hylo tools until the integration is backed by the SDK or a verified API and can
+preserve the same review-before-signing constraints used by Solana tools.
