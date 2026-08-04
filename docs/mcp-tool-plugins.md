@@ -9,6 +9,15 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
 
+The shared famous-token catalog lives in
+`config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
+it for portfolio balance discovery, while Jupiter uses it as the symbol
+allowlist for quote and swap tools. Keep entries conservative and verified:
+`symbol`, `name`, `mint`, `decimals`, and `coingeckoId` are required;
+`category` and `tags` are optional metadata for UI/client grouping. Do not add
+a token unless its mint and decimals are known, because configured symbols form
+part of the public MCP contract.
+
 ## Adding a tool
 
 1. Put registrations in the narrowest domain package and call its exported registration function.

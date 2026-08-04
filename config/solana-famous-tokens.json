@@ -2,61 +2,109 @@
   {
     "symbol": "SOL",
     "name": "Solana",
-    "mint": null, "decimals": 9,
+    "category": "Native",
+    "tags": ["gas", "l1"],
+    "mint": null,
+    "decimals": 9,
     "coingeckoId": "solana"
   },
   {
     "symbol": "USDC",
     "name": "USD Coin",
-    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v", "decimals": 6,
+    "category": "Stablecoin",
+    "tags": ["payments", "quote"],
+    "mint": "EPjFWdd5AufqSSqeM2qN1xzybapC8G4wEGGkZwyTDt1v",
+    "decimals": 6,
     "coingeckoId": "usd-coin"
   },
   {
     "symbol": "USDT",
     "name": "Tether",
-    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB", "decimals": 6,
+    "category": "Stablecoin",
+    "tags": ["payments", "quote"],
+    "mint": "Es9vMFrzaCERmJfrF4H2FYD4KCoNkY11McCe8BenwNYB",
+    "decimals": 6,
     "coingeckoId": "tether"
   },
   {
     "symbol": "wSOL",
     "name": "Wrapped SOL",
-    "mint": "So11111111111111111111111111111111111111112", "decimals": 9,
+    "category": "Wrapped",
+    "tags": ["sol", "spl"],
+    "mint": "So11111111111111111111111111111111111111112",
+    "decimals": 9,
     "coingeckoId": "wrapped-solana"
   },
   {
     "symbol": "JUP",
     "name": "Jupiter",
-    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN", "decimals": 6,
+    "category": "DeFi",
+    "tags": ["dex", "routing"],
+    "mint": "JUPyiwrYJFskUPiHa7hkeR8VUtAeFoSYbKedZNsDvCN",
+    "decimals": 6,
     "coingeckoId": "jupiter-exchange-solana"
   },
   {
     "symbol": "JTO",
     "name": "Jito",
-    "mint": "jtojtomepa8beP8AuQc6eXt5friwgtEpdcV6qD2iABb", "decimals": 9,
+    "category": "Staking",
+    "tags": ["mev", "governance"],
+    "mint": "jtojtomepa8beP8AuQc6eXt5friwgtEpdcV6qD2iABb",
+    "decimals": 9,
     "coingeckoId": "jito"
   },
   {
     "symbol": "PYTH",
     "name": "Pyth Network",
-    "mint": "HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6", "decimals": 6,
+    "category": "Infrastructure",
+    "tags": ["oracle", "data"],
+    "mint": "HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6",
+    "decimals": 6,
     "coingeckoId": "pyth-network"
   },
   {
     "symbol": "RAY",
     "name": "Raydium",
-    "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R", "decimals": 6,
+    "category": "DeFi",
+    "tags": ["dex", "amm"],
+    "mint": "4k3Dyjzvzp8eMZWUXbBCjEvwSkkk59S5iCNLY3QrkX6R",
+    "decimals": 6,
     "coingeckoId": "raydium"
+  },
+  {
+    "symbol": "ORCA",
+    "name": "Orca",
+    "category": "DeFi",
+    "tags": ["dex", "amm"],
+    "mint": "orcaEKTdK7LKz57vaAYN1o2WQe1kektZEhb2JwrYqY6",
+    "decimals": 6,
+    "coingeckoId": "orca"
+  },
+  {
+    "symbol": "W",
+    "name": "Wormhole",
+    "category": "Infrastructure",
+    "tags": ["bridge", "interop"],
+    "mint": "wormDTUJ6AWPNvk59vGQbDvGJmqbDTdgWgAqcLBCgUb",
+    "decimals": 6,
+    "coingeckoId": "wormhole"
   },
   {
     "symbol": "WIF",
     "name": "dogwifhat",
-    "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF7zJ45F8k3pZw6VQ7vT", "decimals": 6,
+    "category": "Meme",
+    "tags": ["community"],
+    "mint": "EKpQGSJtjMFqKZ9KQanSqYXRcF7zJ45F8k3pZw6VQ7vT",
+    "decimals": 6,
     "coingeckoId": "dogwifcoin"
   },
   {
     "symbol": "BONK",
     "name": "Bonk",
-    "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6H7d3QY2fS2Z8vY", "decimals": 5,
+    "category": "Meme",
+    "tags": ["community"],
+    "mint": "DezXAZ8z7PnrnRJjz3wXBoRgixCa6H7d3QY2fS2Z8vY",
+    "decimals": 5,
     "coingeckoId": "bonk"
   }
 ]

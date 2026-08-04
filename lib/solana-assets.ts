@@ -11,6 +11,8 @@ const MAX_JUPITER_PRICE_QUOTES = 25;
 const solanaAssetSchema = z.object({
   symbol: z.string().trim().min(1).max(20),
   name: z.string().trim().min(1).max(100),
+  category: z.string().trim().min(1).max(40).optional(),
+  tags: z.array(z.string().trim().min(1).max(40)).max(8).optional(),
   mint: z.string().trim().min(32).max(44).nullable(),
   decimals: z.number().int().min(0).max(18),
   coingeckoId: z.string().trim().min(1).max(100),
@@ -43,7 +45,7 @@ export const solanaSwapTokens = solanaAssets.map(asset => ({ ...asset, mint: ass
 type RpcResponse<T> = { result?: T; error?: { message?: string } };
 type TokenAccount = { pubkey?: string; account: { data: { parsed: { info: { mint: string; tokenAmount: { amount: string; decimals: number } } } } } };
 
-export type SolanaAssetBalance = { symbol: string; name: string; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null; isWhitelisted: boolean };
+export type SolanaAssetBalance = { symbol: string; name: string; category?: string; tags?: string[]; mint: string | null; balance: string; priceUsd: number | null; valueUsd: number | null; isWhitelisted: boolean };
 export type SolanaPortfolioDiagnostics = { rpcHost: string; ownerScan: { status: 'ok' | 'error'; accountCount: number; error?: string }; mintFallback: Array<{ symbol: string; accountCount: number; error?: string }> };
 export type SolanaPortfolio = { assets: SolanaAssetBalance[]; diagnostics: SolanaPortfolioDiagnostics };
 
@@ -153,7 +155,7 @@ export async function getMainSolanaPortfolio(address: string, rpcUrl: string, cu
   const configuredHoldings = holdings.map(({ asset, balance }) => {
     const priceUsd = prices.get(asset.symbol) ?? (asset.mint ? routePrices.get(asset.mint) ?? null : null);
     const valueUsd = priceUsd === null ? null : Number((Number(balance) * priceUsd).toFixed(2));
-    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, balance, priceUsd, valueUsd, isWhitelisted: asset.mint !== null && whitelistedMints.has(asset.mint) };
+    return { symbol: asset.symbol, name: asset.name, ...(asset.category ? { category: asset.category } : {}), ...(asset.tags?.length ? { tags: asset.tags } : {}), mint: asset.mint, balance, priceUsd, valueUsd, isWhitelisted: asset.mint !== null && whitelistedMints.has(asset.mint) };
   });
   return {
     // Do not surface arbitrary dust/spam tokens. Only global defaults and the

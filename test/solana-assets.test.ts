@@ -87,12 +87,13 @@ describe('getMainSolanaAssetBalances', () => {
 
 
   it('loads the famous-token list from the JSON configuration', () => {
-    expect(solanaAssets.map(asset => asset.symbol)).toEqual(['SOL', 'USDC', 'USDT', 'wSOL', 'JUP', 'JTO', 'PYTH', 'RAY', 'WIF', 'BONK']);
+    expect(solanaAssets.map(asset => asset.symbol)).toEqual(['SOL', 'USDC', 'USDT', 'wSOL', 'JUP', 'JTO', 'PYTH', 'RAY', 'ORCA', 'W', 'WIF', 'BONK']);
+    expect(solanaAssets.find(asset => asset.symbol === 'ORCA')).toMatchObject({ category: 'DeFi', tags: ['dex', 'amm'] });
   });
 
   it('accepts a custom famous-token list and rejects duplicate symbols', () => {
-    const configured = parseSolanaFamousTokens([{ symbol: 'PYTH', name: 'Pyth Network', mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', decimals: 6, coingeckoId: 'pyth-network' }]);
-    expect(configured).toEqual([{ symbol: 'PYTH', name: 'Pyth Network', mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', decimals: 6, coingeckoId: 'pyth-network' }]);
+    const configured = parseSolanaFamousTokens([{ symbol: 'PYTH', name: 'Pyth Network', category: 'Infrastructure', tags: ['oracle'], mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', decimals: 6, coingeckoId: 'pyth-network' }]);
+    expect(configured).toEqual([{ symbol: 'PYTH', name: 'Pyth Network', category: 'Infrastructure', tags: ['oracle'], mint: 'HZ1JovNiVvGrGNiiYvKCX9tcPvd7HXtZbCscQPXXZ8M6', decimals: 6, coingeckoId: 'pyth-network' }]);
     expect(() => parseSolanaFamousTokens([{ symbol: 'SOL', name: 'Solana', mint: null, decimals: 9, coingeckoId: 'solana' }, { symbol: 'sol', name: 'Wrapped Solana', mint: 'So11111111111111111111111111111111111111112', decimals: 9, coingeckoId: 'wrapped-solana' }])).toThrow('duplicate symbol');
   });
 });
