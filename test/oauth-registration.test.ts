@@ -12,6 +12,12 @@ describe('OAuth dynamic client registration', () => {
   it('rejects an untrusted redirect URI', () => {
     expect(() => registerClient({ redirect_uris: ['https://attacker.example/callback'] })).toThrow('invalid_client_metadata');
   });
+  it('permits only the explicitly configured debug callback', () => {
+    const debugRedirect = 'http://127.0.0.1:6274/oauth/callback';
+    expect(registerClient({ redirect_uris: [debugRedirect] }, debugRedirect).client_id).toBe('debug');
+    expect(validateClient('debug', debugRedirect, debugRedirect).clientId).toBe('debug');
+    expect(() => registerClient({ redirect_uris: ['http://127.0.0.1:6275/oauth/callback'] }, debugRedirect)).toThrow('invalid_client_metadata');
+  });
   it('binds both registered clients to their exact callback', () => {
     expect(validateClient('grok', GROK_REDIRECT).clientId).toBe('grok');
     expect(validateClient('openai', openAiRedirect).clientId).toBe('openai');

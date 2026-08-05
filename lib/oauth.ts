@@ -42,11 +42,14 @@ export const GROK_REDIRECT = 'https://grok.com/connectors-oauth-exchange-code/';
 export const OPENAI_REDIRECT_PREFIX = 'https://chatgpt.com/connector/oauth/';
 export const supportedScopes = ['mcp:tools', 'mcp:read', 'mcp:write', 'openid', 'offline_access'];
 
-type RegisteredClient = { clientId: 'grok' | 'openai'; name: string; redirectUri?: string };
-const clients: RegisteredClient[] = [
-  { clientId: 'grok', name: 'Grok', redirectUri: GROK_REDIRECT },
-  { clientId: 'openai', name: 'ChatGPT' },
-];
+type RegisteredClient = { clientId: 'grok' | 'openai' | 'debug'; name: string; redirectUri?: string };
+function clientsFor(debugRedirectUri = env.MCP_DEBUG_REDIRECT_URI): RegisteredClient[] {
+  return [
+    { clientId: 'grok', name: 'Grok', redirectUri: GROK_REDIRECT },
+    { clientId: 'openai', name: 'ChatGPT' },
+    ...(debugRedirectUri ? [{ clientId: 'debug' as const, name: 'MCP debug client', redirectUri: debugRedirectUri }] : []),
+  ];
+}
 
 function isOpenAiRedirect(uri: unknown): uri is string {
   return typeof uri === 'string' && /^https:\/\/chatgpt\.com\/connector\/oauth\/[A-Za-z0-9_-]{6,200}$/.test(uri);
@@ -58,16 +61,17 @@ function validDcrMetadata(body: { token_endpoint_auth_method?: unknown; grant_ty
     && (body.response_types == null || (Array.isArray(body.response_types) && body.response_types.every(value => value === 'code')));
 }
 
-export function registerClient(metadata: { redirect_uris?: unknown; token_endpoint_auth_method?: unknown; grant_types?: unknown; response_types?: unknown; client_name?: unknown }) {
+export function registerClient(metadata: { redirect_uris?: unknown; token_endpoint_auth_method?: unknown; grant_types?: unknown; response_types?: unknown; client_name?: unknown }, debugRedirectUri = env.MCP_DEBUG_REDIRECT_URI) {
   const redirectUris = metadata.redirect_uris;
   const redirectUri = Array.isArray(redirectUris) && redirectUris.length === 1 && typeof redirectUris[0] === 'string' ? redirectUris[0] : undefined;
-  const client = redirectUri === GROK_REDIRECT ? clients[0] : isOpenAiRedirect(redirectUri) ? clients[1] : undefined;
+  const clients = clientsFor(debugRedirectUri);
+  const client = redirectUri === GROK_REDIRECT ? clients[0] : isOpenAiRedirect(redirectUri) ? clients[1] : redirectUri === debugRedirectUri ? clients.find(item => item.clientId === 'debug') : undefined;
   if (!client || !validDcrMetadata(metadata)) throw new Error('invalid_client_metadata');
   return { client_id: client.clientId, client_id_issued_at: Math.floor(Date.now() / 1000), client_name: client.name, redirect_uris: [redirectUri], token_endpoint_auth_method: 'none', grant_types: ['authorization_code', 'refresh_token'], response_types: ['code'] };
 }
 
-export function validateClient(clientId: string, redirectUri: string) {
-  const client = clients.find(item => item.clientId === clientId && (item.redirectUri === redirectUri || (item.clientId === 'openai' && isOpenAiRedirect(redirectUri))));
+export function validateClient(clientId: string, redirectUri: string, debugRedirectUri = env.MCP_DEBUG_REDIRECT_URI) {
+  const client = clientsFor(debugRedirectUri).find(item => item.clientId === clientId && (item.redirectUri === redirectUri || (item.clientId === 'openai' && isOpenAiRedirect(redirectUri))));
   if (!client) throw new Error('invalid_client');
   return client;
 }

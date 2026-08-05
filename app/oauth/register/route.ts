@@ -8,7 +8,7 @@ export async function POST(request: Request) {
     // Redirect URIs are public client metadata, not credentials. Log only this field
     // so an unknown official platform callback can be added as an exact allow-list entry.
     console.info('Rejected OAuth dynamic client registration', { redirectUris: body?.redirect_uris });
-    return Response.json({ error: 'invalid_client_metadata', error_description: 'The redirect URI must be an official Grok or ChatGPT Connector callback.' }, { status: 400, headers: cors });
+    return Response.json({ error: 'invalid_client_metadata', error_description: 'The redirect URI must be an official Grok or ChatGPT Connector callback, or exactly match MCP_DEBUG_REDIRECT_URI when debug access is configured.' }, { status: 400, headers: cors });
   }
 }
 export function OPTIONS() { return new Response(null, { status: 204, headers: { ...cors, 'Access-Control-Allow-Methods': 'POST, OPTIONS', 'Access-Control-Allow-Headers': 'Content-Type' } }); }
