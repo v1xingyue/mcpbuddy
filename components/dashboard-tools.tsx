@@ -2,11 +2,11 @@
 
 import { useMemo, useState } from 'react';
 import { setXstocksPublicToolsEnabled } from '@/app/actions';
+import type { McpPluginCatalogItem } from '@/lib/mcp/tool-catalog';
 
-type Tool = { name: string; description: string };
-type Plugin = { id: string; label: string; category: string; summary: string; tools: Tool[] };
+type Plugin = McpPluginCatalogItem;
 
-const plugins: Plugin[] = [
+const fixturePlugins: Plugin[] = [
   {
     id: 'account/core',
     label: 'Account core',
@@ -79,9 +79,8 @@ const plugins: Plugin[] = [
   },
 ];
 
-const allToolNames = plugins.flatMap(plugin => plugin.tools.map(tool => tool.name));
-
-export function DashboardTools({ xstocksEnabled = true }: { xstocksEnabled?: boolean }) {
+export function DashboardTools({ plugins = fixturePlugins, xstocksEnabled = true }: { plugins?: Plugin[]; xstocksEnabled?: boolean }) {
+  const allToolNames = plugins.flatMap(plugin => plugin.tools.map(tool => tool.name));
   const categories = useMemo(() => ['All', ...new Set(plugins.map(plugin => plugin.category))], []);
   const [activeCategory, setActiveCategory] = useState(categories[0]);
   const [selected, setSelected] = useState(() => new Set(allToolNames));
@@ -177,7 +176,7 @@ export function DashboardTools({ xstocksEnabled = true }: { xstocksEnabled?: boo
                   <button type="button" className="tool-plugin-select" onClick={() => togglePlugin(plugin)}>
                     {allSelected ? 'Clear plugin' : 'Select plugin'} ({pluginSelectedCount}/{plugin.tools.length})
                   </button>
-                  {plugin.id === 'xstocks/public' && <button type="button" className="tool-plugin-select" onClick={() => void toggleXstocks()} disabled={savingXstocks} aria-pressed={isXstocksEnabled}>
+                  {plugin.controllable && <button type="button" className="tool-plugin-select" onClick={() => void toggleXstocks()} disabled={savingXstocks} aria-pressed={isXstocksEnabled}>
                     {savingXstocks ? 'Saving…' : isXstocksEnabled ? 'Disable for account' : 'Enable for account'}
                   </button>}
                 </div>
