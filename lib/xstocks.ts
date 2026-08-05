@@ -5,6 +5,9 @@ import { xstocksSolanaAssetCache } from '@/lib/db/schema';
 
 const XSTOCKS_API_ORIGIN = 'https://api.xstocks.fi/api/v2';
 const MAX_RESPONSE_BYTES = 256_000;
+// The official unpaginated assets document is currently about 474 KB. This
+// budget is internal-only: it is reduced to a tiny Solana catalog before DB storage.
+const MAX_ASSET_CATALOG_RESPONSE_BYTES = 768_000;
 const SOLANA_ASSET_CACHE_KEY = 'solana-assets-v1';
 const SOLANA_ASSET_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 const DEXSCREENER_SOLANA_TOKENS_ORIGIN = 'https://api.dexscreener.com/tokens/v1/solana';
@@ -70,7 +73,7 @@ function operationFor(id: XstocksPublicOperation) {
 }
 
 /** Fetches only explicitly documented unauthenticated xStocks v2 endpoints. */
-export async function getXstocksPublicData(request: XstocksPublicRequest) {
+export async function getXstocksPublicData(request: XstocksPublicRequest, maxResponseBytes = MAX_RESPONSE_BYTES) {
   const parsed = xstocksPublicRequestSchema.parse(request);
   const operation = operationFor(parsed.operation);
   if (operation.requiresSymbol && !parsed.symbol) throw new Error(`${parsed.operation} requires a symbol.`);
@@ -81,9 +84,9 @@ export async function getXstocksPublicData(request: XstocksPublicRequest) {
   const response = await fetch(url, { headers: { accept: 'application/json' }, next: { revalidate: 30 } });
   if (!response.ok) throw new Error(`xStocks public API request failed (${response.status}).`);
   const contentLength = Number(response.headers.get('content-length') ?? '0');
-  if (contentLength > MAX_RESPONSE_BYTES) throw new Error('xStocks response is too large to return safely. Narrow query parameters and try again.');
+  if (contentLength > maxResponseBytes) throw new Error('xStocks response is too large to return safely. Narrow query parameters and try again.');
   const body = await response.text();
-  if (body.length > MAX_RESPONSE_BYTES) throw new Error('xStocks response is too large to return safely. Narrow query parameters and try again.');
+  if (body.length > maxResponseBytes) throw new Error('xStocks response is too large to return safely. Narrow query parameters and try again.');
   try { return { operation: parsed.operation, data: JSON.parse(body) as unknown, fetchedAt: new Date().toISOString() }; }
   catch { throw new Error('xStocks public API returned an invalid JSON response.'); }
 }
@@ -110,7 +113,7 @@ function solanaAsset(asset: XstocksAsset): XstocksSolanaAsset | null {
 }
 
 async function fetchSolanaXstocks(): Promise<XstocksSolanaAsset[]> {
-  const result = await getXstocksPublicData({ operation: 'assets' });
+  const result = await getXstocksPublicData({ operation: 'assets' }, MAX_ASSET_CATALOG_RESPONSE_BYTES);
   const body = asRecord(result.data);
   if (!Array.isArray(body.nodes)) throw new Error('xStocks assets response is missing nodes.');
   return body.nodes.map(asAsset).map(solanaAsset).filter((asset): asset is XstocksSolanaAsset => asset !== null)
@@ -139,14 +142,18 @@ async function loadCachedSolanaXstocks(): Promise<CachedSolanaXstocks> {
   }
 }
 
-async function storeSolanaXstocks(assets: XstocksSolanaAsset[]) {
-  try {
-    const fetchedAt = new Date();
-    await getDb().insert(xstocksSolanaAssetCache).values({ cacheKey: SOLANA_ASSET_CACHE_KEY, assets: JSON.stringify(assets), fetchedAt })
-      .onConflictDoUpdate({ target: xstocksSolanaAssetCache.cacheKey, set: { assets: JSON.stringify(assets), fetchedAt } });
-  } catch {
-    // A cache write must never turn a successful public data lookup into a tool failure.
-  }
+async function persistSolanaXstocks(assets: XstocksSolanaAsset[]) {
+  const fetchedAt = new Date();
+  await getDb().insert(xstocksSolanaAssetCache).values({ cacheKey: SOLANA_ASSET_CACHE_KEY, assets: JSON.stringify(assets), fetchedAt })
+    .onConflictDoUpdate({ target: xstocksSolanaAssetCache.cacheKey, set: { assets: JSON.stringify(assets), fetchedAt } });
+  return fetchedAt;
+}
+
+/** Refreshes the shared compact catalog. Intended for the authenticated daily cron. */
+export async function refreshSolanaXstocks() {
+  const assets = await fetchSolanaXstocks();
+  const fetchedAt = await persistSolanaXstocks(assets);
+  return { count: assets.length, fetchedAt: fetchedAt.toISOString() };
 }
 
 /** Lists xStocks that have a verified Solana deployment, with a shared 24-hour database cache for stable mint mappings. */
@@ -155,7 +162,7 @@ export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
   if (cached && Date.now() - cached.fetchedAt.getTime() < SOLANA_ASSET_CACHE_TTL_MS) return cached.assets;
   try {
     const assets = await fetchSolanaXstocks();
-    await storeSolanaXstocks(assets);
+    try { await persistSolanaXstocks(assets); } catch { /* A cache write must not hide a successful live catalog lookup. */ }
     return assets;
   } catch (error) {
     if (cached) return cached.assets;

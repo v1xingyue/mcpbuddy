@@ -26,6 +26,14 @@ callback URL in both the local environment and Vercel. It is an exact-match
 allowlist, not a wildcard; leave it unset in production when debug access is
 not required.
 
+### Daily xStocks catalog refresh
+
+`vercel.json` schedules `GET /api/cron/xstocks` daily at 03:17 UTC. Set a
+high-entropy `CRON_SECRET` in Vercel; Vercel Cron sends it as the bearer token.
+The job reads the large official assets document, validates it, and stores only
+the compact Solana `symbol`/`name`/`mint` catalog in Postgres. The MCP tools
+read that compact cache, so it is never returned as an oversized Agent response.
+
 `publish_html(html)` accepts one complete HTML document (up to 1 MB) and returns a direct Vercel Blob public URL with `text/html` content type. The URL is publicly accessible and the document is deliberately served from the isolated Blob origin rather than the MCPBuddy app origin. Do not publish secrets, private data, or reusable credentials.
 
 `get_solana_asset_balances` reads the bound wallet's configured famous-token list plus tokens in the current account's wallet whitelist, returning a USD quote where available. The included list covers SOL, USDC, USDT, wSOL, JUP, JTO, PYTH, RAY, ORCA, W, WIF, and BONK, grouped by categories such as Native, Stablecoin, DeFi, Infrastructure, Staking, Wrapped, and Meme. Whitelisted tokens are account-scoped, are included only when their balance is nonzero, and may have no USD quote. When CoinGecko has no quote, MCPBuddy requests a read-only Jupiter route quote for exactly one token into USDC (for example, 1 SPACEX → 90.14 USDC); it neither creates nor signs a transaction. `list_solana_swap_tokens` also includes a current-account whitelist token when Jupiter can quote it; its on-chain/Jupiter decimal metadata is resolved before it can be used by the symbol-based swap or transfer tools, and configured tokens include `category` and `tags` metadata for client grouping. Edit [`config/solana-famous-tokens.json`](config/solana-famous-tokens.json) to choose the queried assets; each item requires `symbol`, `name`, `mint` (use `null` for SOL), `decimals`, and `coingeckoId`, with optional `category` and `tags`. Set `SOLANA_RPC_URL` to a production RPC provider endpoint to avoid public-RPC rate limits; when omitted, it uses Solana's public mainnet endpoint. Prices are fetched from CoinGecko and are indicative only.

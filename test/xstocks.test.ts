@@ -24,6 +24,12 @@ describe('xStocks public API contract', () => {
     await expect(listXstocks()).resolves.toEqual([{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana' }]);
   });
 
+  it('accepts the bounded large upstream catalog only for compact internal caching', async () => {
+    const largeCatalog = JSON.stringify({ nodes: [nvda], ignoredUpstreamFields: 'x'.repeat(300_000) });
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(largeCatalog, { status: 200, headers: { 'content-length': String(largeCatalog.length) } })));
+    await expect(listXstocks()).resolves.toEqual([{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana' }]);
+  });
+
   it('combines the documented public asset data into a Solana xStock detail', async () => {
     vi.stubGlobal('fetch', vi.fn((url: URL) => {
       const path = url.pathname;
