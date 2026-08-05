@@ -1,16 +1,9 @@
 import { auth } from '@/auth';
 import { provisionUserForSession } from '@/app/actions';
 import { registerMcpTools } from '@/app/api/mcp/route';
+import { pluginForTool } from '@/lib/mcp/tool-catalog';
 
 type RegisteredTool = { name: string; description: string };
-
-function pluginFor(name: string) {
-  if (name.includes('xstocks')) return 'xstocks/public';
-  if (name.includes('hylo')) return 'hylo/core';
-  if (name.includes('solana') || name.includes('wallet')) return 'solana/base';
-  if (name.includes('page') || name === 'publish_html') return 'content/pages';
-  return 'account/core';
-}
 
 /** Discovers the live MCP registration surface without invoking any tool handler. */
 export async function GET() {
@@ -24,7 +17,7 @@ export async function GET() {
     registerResource: () => undefined,
   });
   const grouped = [...tools.values()].sort((a, b) => a.name.localeCompare(b.name)).reduce<Record<string, RegisteredTool[]>>((groups, tool) => {
-    const id = pluginFor(tool.name); (groups[id] ??= []).push(tool); return groups;
+    const id = pluginForTool(tool.name); (groups[id] ??= []).push(tool); return groups;
   }, {});
   const plugins = Object.entries(grouped).map(([id, items]) => ({ id, label: id, category: id.split('/')[0], summary: `${items.length} tool${items.length === 1 ? '' : 's'} discovered from the live MCP registration.`, tools: items, controllable: id === 'xstocks/public' }));
   return Response.json({ plugins }, { headers: { 'Cache-Control': 'private, no-store' } });
