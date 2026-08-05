@@ -1,10 +1,9 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { setXstocksPublicToolsEnabled } from '@/app/actions';
-import type { McpPluginCatalogItem } from '@/lib/mcp/tool-catalog';
-
-type Plugin = McpPluginCatalogItem;
+type Tool = { name: string; description: string };
+type Plugin = { id: string; label: string; category: string; summary: string; tools: Tool[]; controllable?: boolean };
 
 const fixturePlugins: Plugin[] = [
   {
@@ -80,8 +79,9 @@ const fixturePlugins: Plugin[] = [
 ];
 
 export function DashboardTools({ plugins = fixturePlugins, xstocksEnabled = true }: { plugins?: Plugin[]; xstocksEnabled?: boolean }) {
-  const allToolNames = plugins.flatMap(plugin => plugin.tools.map(tool => tool.name));
-  const categories = useMemo(() => ['All', ...new Set(plugins.map(plugin => plugin.category))], []);
+  const [registeredPlugins, setRegisteredPlugins] = useState(plugins);
+  const allToolNames = registeredPlugins.flatMap(plugin => plugin.tools.map(tool => tool.name));
+  const categories = useMemo(() => ['All', ...new Set(registeredPlugins.map(plugin => plugin.category))], [registeredPlugins]);
   const [activeCategory, setActiveCategory] = useState(categories[0]);
   const [selected, setSelected] = useState(() => new Set(allToolNames));
   const [open, setOpen] = useState(() => new Set(plugins.map(plugin => plugin.id)));
@@ -89,7 +89,10 @@ export function DashboardTools({ plugins = fixturePlugins, xstocksEnabled = true
   const [isXstocksEnabled, setIsXstocksEnabled] = useState(xstocksEnabled);
   const [savingXstocks, setSavingXstocks] = useState(false);
 
-  const visiblePlugins = activeCategory === 'All' ? plugins : plugins.filter(plugin => plugin.category === activeCategory);
+  useEffect(() => { fetch('/api/dashboard/tools', { cache: 'no-store' }).then(response => response.ok ? response.json() : null).then(data => {
+    if (Array.isArray(data?.plugins)) { setRegisteredPlugins(data.plugins); setOpen(new Set(data.plugins.map((plugin: Plugin) => plugin.id))); setSelected(new Set(data.plugins.flatMap((plugin: Plugin) => plugin.tools.map(tool => tool.name)))); }
+  }).catch(() => undefined); }, []);
+  const visiblePlugins = activeCategory === 'All' ? registeredPlugins : registeredPlugins.filter(plugin => plugin.category === activeCategory);
   const selectedCount = selected.size;
   const visibleToolCount = visiblePlugins.reduce((count, plugin) => count + plugin.tools.length, 0);
 
@@ -114,7 +117,7 @@ export function DashboardTools({ plugins = fixturePlugins, xstocksEnabled = true
   });
 
   async function exportSelected() {
-    const chosen = plugins.flatMap(plugin => plugin.tools.map(tool => ({ ...tool, category: plugin.category, plugin: plugin.id }))).filter(tool => selected.has(tool.name));
+    const chosen = registeredPlugins.flatMap(plugin => plugin.tools.map(tool => ({ ...tool, category: plugin.category, plugin: plugin.id }))).filter(tool => selected.has(tool.name));
     await navigator.clipboard.writeText(JSON.stringify({ tools: chosen }, null, 2)).catch(() => undefined);
     setStatus(`${chosen.length} tool definition(s) copied as JSON.`);
   }
@@ -144,7 +147,7 @@ export function DashboardTools({ plugins = fixturePlugins, xstocksEnabled = true
             {categories.map(category => (
               <button key={category} type="button" role="tab" aria-selected={activeCategory === category} className={activeCategory === category ? 'active' : undefined} onClick={() => setActiveCategory(category)}>
                 <span>{category}</span>
-                <small>{category === 'All' ? allToolNames.length : plugins.filter(plugin => plugin.category === category).reduce((count, plugin) => count + plugin.tools.length, 0)}</small>
+                <small>{category === 'All' ? allToolNames.length : registeredPlugins.filter(plugin => plugin.category === category).reduce((count, plugin) => count + plugin.tools.length, 0)}</small>
               </button>
             ))}
           </div>

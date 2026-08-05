@@ -135,8 +135,8 @@ async function currentUser(accountId: unknown) {
   return user;
 }
 
-const handler = createMcpHandler(
-  (server) => {
+/** Single registration source for both the live MCP endpoint and dashboard discovery. */
+export function registerMcpTools(server: any) {
     const solanaPluginContext = { currentUser, reviewUiUri: SWAP_REVIEW_UI_URI, reviewUi: SWAP_REVIEW_UI, reviewOutputSchema: transactionReviewOutputSchema, transactionStatusOutputSchema, appOrigin: () => env.MCP_RESOURCE_URL ?? env.NEXT_PUBLIC_APP_URL ?? 'https://mcpbuddy.creatorsand.fun' };
     registerSolanaBasePlugin(server, solanaPluginContext);
     registerSolanaJupiterPlugin(server, solanaPluginContext);
@@ -146,7 +146,7 @@ const handler = createMcpHandler(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',
       { platform: z.enum(['grok', 'openai', 'claude']) },
-      async ({ platform }, extra) => {
+      async ({ platform }: { platform: 'grok' | 'openai' | 'claude' }, extra: any) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         await getDb().insert(platformConnections).values({ userId: user.id, platform, clientId: extra.authInfo?.clientId ?? 'unknown' })
           .onConflictDoUpdate({ target: [platformConnections.userId, platformConnections.platform], set: { clientId: extra.authInfo?.clientId ?? 'unknown', confirmedAt: new Date() } });
@@ -157,7 +157,7 @@ const handler = createMcpHandler(
       'user_info',
       'Read the current user’s private AI Context Pack before starting work. It contains their profile, working preferences, hard limits, current goals, project notes, and tool guidance.',
       {},
-      async (_args, extra) => {
+      async (_args: unknown, extra: any) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         return { content: [{ type: 'text', text: contextPackForMcp(user.userInfo) }] };
       },
@@ -166,7 +166,7 @@ const handler = createMcpHandler(
       'publish_page',
       'Publish an account-owned Markdown page and return its storage URL.',
       { slug: z.string().regex(/^[a-z0-9-]{1,80}$/), title: z.string().min(1).max(140), content: z.string().min(1).max(100_000), public: z.boolean().default(false).describe('Whether anyone with the returned URL can view the page.') },
-      async ({ slug, title, content, public: isPublic }, extra) => {
+      async ({ slug, title, content, public: isPublic }: { slug: string; title: string; content: string; public: boolean }, extra: any) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         // Private pages stay solely in Postgres; never write their content to a public Blob URL.
         const blob = isPublic && env.BLOB_READ_WRITE_TOKEN ? await put(`pages/${user.id}/${slug}.md`, content, { access: 'public', addRandomSuffix: false, contentType: 'text/markdown; charset=utf-8', token: env.BLOB_READ_WRITE_TOKEN }) : null;
@@ -185,7 +185,7 @@ const handler = createMcpHandler(
         inputSchema: { html: publicHtmlSchema.describe('A complete standalone HTML document, including <html> and </html>. Maximum 1 MB.') },
         outputSchema: { url: z.string().url() },
       },
-      async ({ html }, extra) => {
+      async ({ html }: { html: string }, extra: any) => {
         try {
           const user = await currentUser(extra.authInfo?.extra?.githubId);
           if (!env.BLOB_READ_WRITE_TOKEN) {
@@ -211,7 +211,7 @@ const handler = createMcpHandler(
       'list_pages',
       'List pages previously published by this MCP identity.',
       {},
-      async (_args, extra) => {
+      async (_args: unknown, extra: any) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         const pages = await getDb().select({ id: publishedPages.id, slug: publishedPages.slug, title: publishedPages.title, isPublic: publishedPages.isPublic, publicId: publishedPages.publicId, updatedAt: publishedPages.updatedAt }).from(publishedPages).where(eq(publishedPages.userId, user.id));
         return { content: [{ type: 'text', text: JSON.stringify(pages) }] };
@@ -224,7 +224,7 @@ const handler = createMcpHandler(
         id: z.string().uuid().optional().describe('The page UUID returned by list_pages.'),
         title: z.string().min(1).max(140).optional().describe('The exact page title. Use id instead if more than one page has this title.'),
       },
-      async ({ id, title }, extra) => {
+      async ({ id, title }: { id?: string; title?: string }, extra: any) => {
         const user = await currentUser(extra.authInfo?.extra?.githubId);
         if ((id ? 1 : 0) + (title ? 1 : 0) !== 1) {
           return { content: [{ type: 'text', text: 'Provide exactly one of id or title.' }], isError: true };
@@ -246,7 +246,10 @@ const handler = createMcpHandler(
         return { content: [{ type: 'text', text: JSON.stringify(pages[0]) }] };
       },
     );
-  },
+}
+
+const handler = createMcpHandler(
+  registerMcpTools,
   { serverInfo: { name: 'MCPBuddy', version: '0.2.0' } },
   { basePath: '/api', maxDuration: 60, disableSse: true },
 );
