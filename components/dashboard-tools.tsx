@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState } from 'react';
+import { setXstocksPublicToolsEnabled } from '@/app/actions';
 
 type Tool = { name: string; description: string };
 type Plugin = { id: string; label: string; category: string; summary: string; tools: Tool[] };
@@ -55,6 +56,16 @@ const plugins: Plugin[] = [
     ],
   },
   {
+    id: 'xstocks/public',
+    label: 'xStocks public data',
+    category: 'Markets',
+    summary: 'Official xStocks API v2 public market data; read-only, no API key or trading authority.',
+    tools: [
+      { name: 'list_xstocks_public_operations()', description: 'List all 16 supported public xStocks API operations.' },
+      { name: 'get_xstocks_public_data(operation, symbol?, query?)', description: 'Retrieve an allowlisted asset, reserve, oracle, system, corporate-action, or bridge response.' },
+    ],
+  },
+  {
     id: 'content/pages',
     label: 'Content pages',
     category: 'Content',
@@ -70,12 +81,14 @@ const plugins: Plugin[] = [
 
 const allToolNames = plugins.flatMap(plugin => plugin.tools.map(tool => tool.name));
 
-export function DashboardTools() {
+export function DashboardTools({ xstocksEnabled = true }: { xstocksEnabled?: boolean }) {
   const categories = useMemo(() => ['All', ...new Set(plugins.map(plugin => plugin.category))], []);
   const [activeCategory, setActiveCategory] = useState(categories[0]);
   const [selected, setSelected] = useState(() => new Set(allToolNames));
   const [open, setOpen] = useState(() => new Set(plugins.map(plugin => plugin.id)));
   const [status, setStatus] = useState('');
+  const [isXstocksEnabled, setIsXstocksEnabled] = useState(xstocksEnabled);
+  const [savingXstocks, setSavingXstocks] = useState(false);
 
   const visiblePlugins = activeCategory === 'All' ? plugins : plugins.filter(plugin => plugin.category === activeCategory);
   const selectedCount = selected.size;
@@ -105,6 +118,14 @@ export function DashboardTools() {
     const chosen = plugins.flatMap(plugin => plugin.tools.map(tool => ({ ...tool, category: plugin.category, plugin: plugin.id }))).filter(tool => selected.has(tool.name));
     await navigator.clipboard.writeText(JSON.stringify({ tools: chosen }, null, 2)).catch(() => undefined);
     setStatus(`${chosen.length} tool definition(s) copied as JSON.`);
+  }
+
+  async function toggleXstocks() {
+    const next = !isXstocksEnabled;
+    setSavingXstocks(true);
+    try { await setXstocksPublicToolsEnabled(next); setIsXstocksEnabled(next); setStatus(`xStocks public tools ${next ? 'enabled' : 'disabled'} for this account.`); }
+    catch { setStatus('Could not update the xStocks tool setting. Please try again.'); }
+    finally { setSavingXstocks(false); }
   }
 
   return (
@@ -156,6 +177,9 @@ export function DashboardTools() {
                   <button type="button" className="tool-plugin-select" onClick={() => togglePlugin(plugin)}>
                     {allSelected ? 'Clear plugin' : 'Select plugin'} ({pluginSelectedCount}/{plugin.tools.length})
                   </button>
+                  {plugin.id === 'xstocks/public' && <button type="button" className="tool-plugin-select" onClick={() => void toggleXstocks()} disabled={savingXstocks} aria-pressed={isXstocksEnabled}>
+                    {savingXstocks ? 'Saving…' : isXstocksEnabled ? 'Disable for account' : 'Enable for account'}
+                  </button>}
                 </div>
 
                 {isOpen && (

@@ -51,6 +51,11 @@ xStocks API v2 through a fixed operation allowlist. It accepts only a validated
 asset symbol and bounded string query parameters; callers cannot supply a host
 or path. Responses are JSON-only and capped at 256 KB.
 
+Each account can enable or disable this public package in **Tool list**. The
+setting is persisted in `tool_plugin_settings` and enforced again in the MCP
+handler after token authentication, so disabling it is not merely a dashboard
+display preference.
+
 The xStocks `Client` and `Trades` API groups are intentionally not exposed from
 this shared MCP service. Those endpoints require a Backed organization API key
 and include wallet whitelisting, RFQs, issuance/redemption, and bridge

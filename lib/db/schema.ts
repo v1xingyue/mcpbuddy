@@ -77,6 +77,15 @@ export const platformConnections = pgTable('platform_connections', {
   { unique: 'platform_connections_user_platform_unique', columns: [table.userId, table.platform] },
 ]);
 
+/** Per-account opt-in switches for MCP tool groups. Missing rows keep a group enabled. */
+export const toolPluginSettings = pgTable('tool_plugin_settings', {
+  id: uuid('id').defaultRandom().primaryKey(),
+  userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
+  pluginId: text('plugin_id').notNull(),
+  enabled: boolean('enabled').default(true).notNull(),
+  updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+}, (table) => [{ unique: 'tool_plugin_settings_user_plugin_unique', columns: [table.userId, table.pluginId] }]);
+
 export const swapTransactions = pgTable('swap_transactions', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),

@@ -141,7 +141,7 @@ const handler = createMcpHandler(
     registerSolanaBasePlugin(server, solanaPluginContext);
     registerSolanaJupiterPlugin(server, solanaPluginContext);
     registerHyloCorePlugin(server, solanaPluginContext);
-    registerXstocksPublicPlugin(server);
+    registerXstocksPublicPlugin(server, solanaPluginContext);
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',

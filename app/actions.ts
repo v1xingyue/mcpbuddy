@@ -3,7 +3,7 @@
 import { auth } from '@/auth';
 import type { Session } from 'next-auth';
 import { getDb } from '@/lib/db';
-import { authIdentities, mcpConnections, platformConnections, users, walletBindings } from '@/lib/db/schema';
+import { authIdentities, mcpConnections, platformConnections, toolPluginSettings, users, walletBindings } from '@/lib/db/schema';
 import { publishedPages } from '@/lib/db/schema';
 import { walletChallenges } from '@/lib/db/schema';
 import { eq, and, gt } from 'drizzle-orm';
@@ -83,6 +83,15 @@ export async function updateUserInfo(content: string) {
   if (typeof content !== 'string' || content.length > 20_000) throw new Error('User info must be Markdown under 20,000 characters.');
   await getDb().update(users).set({ userInfo: content.trim() }).where(eq(users.id, user.id));
   revalidatePath('/account/profile');
+}
+
+/** Enables or disables the account's public xStocks MCP tool group. */
+export async function setXstocksPublicToolsEnabled(enabled: boolean) {
+  const user = await provisionUser(); if (!user) throw new Error('Sign in to MCPBuddy first.');
+  if (typeof enabled !== 'boolean') throw new Error('Tool setting must be a boolean.');
+  await getDb().insert(toolPluginSettings).values({ userId: user.id, pluginId: 'xstocks/public', enabled, updatedAt: new Date() })
+    .onConflictDoUpdate({ target: [toolPluginSettings.userId, toolPluginSettings.pluginId], set: { enabled, updatedAt: new Date() } });
+  revalidatePath('/tools');
 }
 
 /** Removes a secondary sign-in method while preserving an active way back into the account. */
