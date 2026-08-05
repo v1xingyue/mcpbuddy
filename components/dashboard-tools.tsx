@@ -58,10 +58,13 @@ const fixturePlugins: Plugin[] = [
     id: 'xstocks/public',
     label: 'xStocks public data',
     category: 'Markets',
-    summary: 'Official xStocks API v2 public market data; read-only, no API key or trading authority.',
+    summary: 'Compact xStocks market discovery plus Jupiter-routed, wallet-reviewed swaps; no server-side signing.',
     tools: [
-      { name: 'list_xstocks_public_operations()', description: 'List all 16 supported public xStocks API operations.' },
-      { name: 'get_xstocks_public_data(operation, symbol?, query?)', description: 'Retrieve an allowlisted asset, reserve, oracle, system, corporate-action, or bridge response.' },
+      { name: 'search_xstocks(query?, limit?, cursor?)', description: 'Find verified Solana xStocks by ticker or name in compact pages.' },
+      { name: 'list_xstocks_by_volume(limit?)', description: 'List the top 10 verified xStocks by public 24-hour DEX volume.' },
+      { name: 'get_xstock_market(symbol)', description: 'Get one xStock’s official price and public 24-hour DEX volume.' },
+      { name: 'quote_xstock_swap(side, symbol, amount, slippageBps)', description: 'Get a read-only USDC/xStock Jupiter route.' },
+      { name: 'create_xstock_swap(side, symbol, amount, slippageBps)', description: 'Create an unsigned xStock swap for wallet review.' },
     ],
   },
   {

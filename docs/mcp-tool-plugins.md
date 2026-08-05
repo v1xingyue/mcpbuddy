@@ -46,25 +46,21 @@ same owner-scoped, review-before-signing constraints used by Solana tools.
 
 ## xStocks package
 
-`xstocks/public` exposes all sixteen unauthenticated GET operations documented in
-xStocks API v2 through a fixed operation allowlist. It accepts only a validated
-asset symbol and bounded string query parameters; callers cannot supply a host
-or path. Responses are JSON-only and capped at 256 KB.
+`xstocks/public` uses the unauthenticated xStocks API v2 only behind bounded,
+task-oriented MCP tools. MCP clients cannot supply a host, path, or arbitrary
+upstream operation.
 
-`list_xstocks({ limit, cursor })` is the normalized catalog for Solana
-workflows. It defaults to 50 records (maximum 100) and returns only each
-asset's symbol, display name, and Solana mint plus an offset-based
-`nextCursor`. Pass that cursor to obtain the next page. `count_xstocks()`
-returns the catalog size. `get_xstocks({ symbol })` resolves one symbol to its
-Solana deployment plus a public USD quote, Solana multiplier, and Solana oracle
-identifier. `get_xstock` remains as a deprecated compatibility alias. The
-public xStocks API does not provide Metaplex metadata URIs, so `metadataUri` is
-explicitly `null`; its logo URL is not misrepresented as on-chain metadata.
+The AI-facing contract intentionally exposes only compact, task-oriented
+results. `search_xstocks({ query, limit, cursor })` searches ticker/name and
+returns a maximum of 20 symbol/name records plus the matching total and an
+offset-based `nextCursor`. It does not return mints because every quote and
+trade resolves the selected symbol again against the verified server-side
+catalog.
 
 The Solana catalog is stored as one shared public Postgres cache record for 24
 hours. This avoids repeatedly resolving stable mint mappings while never
-mixing account data. A failed refresh serves the last valid catalog; price,
-multiplier, and oracle values in `get_xstock` are still fetched live.
+mixing account data. A failed refresh serves the last valid catalog; price and
+market values are fetched live.
 
 For trading-oriented requests, `list_xstocks_by_volume({ limit })` ranks the
 verified Solana catalog by public DexScreener 24-hour USD pair volume and
@@ -80,6 +76,12 @@ are USDC inputs; `sell` amounts are xStock-token units. It deliberately does
 not accept “sell $100 worth” as an exact execution instruction: market price
 and route output can move, so the caller must quote and choose an exact token
 quantity before creating the wallet-reviewed transaction.
+
+The raw xStocks public-data proxy, its operation-listing tool, duplicate
+single-asset aliases, and standalone count tool are not exposed to MCP clients.
+They can produce oversized upstream JSON and make agent tool selection less
+reliable; the bounded operations above cover catalog discovery, market lookup,
+route quoting, and wallet-reviewed trading.
 
 Each account can enable or disable this public package in **Tool list**. The
 setting is persisted in `tool_plugin_settings` and enforced again in the MCP

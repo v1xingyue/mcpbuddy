@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { countXstocks, getXstock, getXstockMarket, listXstocks, listXstocksByVolume, listXstocksPage, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
+import { getXstock, getXstockMarket, listXstocks, listXstocksByVolume, listXstocksPage, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
 
 const nvda = { name: 'NVIDIA xStock', symbol: 'NVDAx', deployments: [{ address: 'NVDASolanaMint11111111111111111111111111111111', network: 'Solana' }, { address: '0x123', network: 'Ethereum' }] };
 const noSolana = { name: 'Other xStock', symbol: 'OTHx', deployments: [{ address: '0x456', network: 'Ethereum' }] };
@@ -53,8 +53,9 @@ describe('xStocks public API contract', () => {
 
   it('returns a lightweight cursor page and catalog count', async () => {
     vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ nodes: [nvda] }), { status: 200 }))));
-    await expect(listXstocksPage({ limit: 50 })).resolves.toEqual({ xstocks: [{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111' }], nextCursor: null });
-    await expect(countXstocks()).resolves.toBe(1);
+    await expect(listXstocksPage({ query: 'nvid', limit: 10 })).resolves.toEqual({ total: 1, xstocks: [{ symbol: 'NVDAx', name: 'NVIDIA xStock' }], nextCursor: null });
+    await expect(listXstocksPage({ query: 'tesla', limit: 10 })).resolves.toEqual({ total: 0, xstocks: [], nextCursor: null });
+    await expect(listXstocksPage({ limit: 21 })).rejects.toThrow('1 to 20');
     await expect(listXstocksPage({ cursor: '../bad' })).rejects.toThrow('cursor is invalid');
   });
 

@@ -58,8 +58,8 @@ export type Xstock = XstocksSolanaAsset & {
   metadataUri: null;
 };
 
-export type XstocksListItem = Omit<XstocksSolanaAsset, 'chain'>;
-export type XstocksPage = { xstocks: XstocksListItem[]; nextCursor: string | null };
+export type XstocksListItem = Pick<XstocksSolanaAsset, 'symbol' | 'name'>;
+export type XstocksPage = { total: number; xstocks: XstocksListItem[]; nextCursor: string | null };
 export type XstockMarket = XstocksSolanaAsset & { price: number; volume24hUsd: number | null; volumeSource: 'dexscreener'; fetchedAt: string };
 
 export const xstocksPublicRequestSchema = z.object({ operation: xstocksPublicOperationSchema, symbol: symbolSchema.optional(), query: querySchema.optional().default({}) });
@@ -163,18 +163,15 @@ export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
   }
 }
 
-/** Pages the cached Solana catalog with a bounded, offset-based cursor. */
-export async function listXstocksPage({ limit = 50, cursor }: { limit?: number; cursor?: string } = {}): Promise<XstocksPage> {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be an integer from 1 to 100.');
+/** Searches the cached Solana catalog with a small, bounded AI-facing page. Mints stay server-side for swap validation. */
+export async function listXstocksPage({ limit = 10, cursor, query }: { limit?: number; cursor?: string; query?: string } = {}): Promise<XstocksPage> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 20) throw new Error('limit must be an integer from 1 to 20.');
   const offset = cursor === undefined ? 0 : /^[0-9]{1,6}$/.test(cursor) ? Number(cursor) : NaN;
-  if (!Number.isSafeInteger(offset)) throw new Error('cursor is invalid. Use the nextCursor returned by a previous list_xstocks call.');
-  const assets = await listXstocks();
-  const items = assets.slice(offset, offset + limit).map(({ symbol, name, mint }) => ({ symbol, name, mint }));
-  return { xstocks: items, nextCursor: offset + items.length < assets.length ? String(offset + items.length) : null };
-}
-
-export async function countXstocks(): Promise<number> {
-  return (await listXstocks()).length;
+  if (!Number.isSafeInteger(offset)) throw new Error('cursor is invalid. Use the nextCursor returned by a previous search_xstocks call.');
+  const normalizedQuery = query?.trim().toUpperCase();
+  const assets = (await listXstocks()).filter(asset => !normalizedQuery || asset.symbol.toUpperCase().includes(normalizedQuery) || asset.name.toUpperCase().includes(normalizedQuery));
+  const items = assets.slice(offset, offset + limit).map(({ symbol, name }) => ({ symbol, name }));
+  return { total: assets.length, xstocks: items, nextCursor: offset + items.length < assets.length ? String(offset + items.length) : null };
 }
 
 /** Resolves a symbol against the verified Solana xStocks catalog, never a caller-provided mint. */
@@ -215,7 +212,7 @@ export async function xstockVolumes24h(assets: XstocksSolanaAsset[]) {
 
 /** Lists verified Solana xStocks ranked by public DEX 24-hour USD volume. */
 export async function listXstocksByVolume(limit = 10) {
-  if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw new Error('limit must be an integer from 1 to 25.');
+  if (!Number.isInteger(limit) || limit < 1 || limit > 10) throw new Error('limit must be an integer from 1 to 10.');
   const assets = await listXstocks();
   const volumes = await xstockVolumes24h(assets);
   return assets.map(asset => ({ ...asset, volume24hUsd: volumes.get(asset.mint) ?? null, volumeSource: 'dexscreener' as const }))

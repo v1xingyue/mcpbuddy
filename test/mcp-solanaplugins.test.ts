@@ -25,7 +25,7 @@ describe('Solana MCP tool packages', () => {
   it('registers the bounded xStocks public data tools', () => {
     const { server, calls } = recorder();
     registerXstocksPublicPlugin(server, context);
-    expect(calls.map(call => call.name)).toEqual(['list_xstocks_by_volume', 'get_xstock_market', 'quote_xstock_swap', 'create_xstock_swap', 'list_xstocks', 'count_xstocks', 'get_xstocks', 'get_xstock', 'list_xstocks_public_operations', 'get_xstocks_public_data']);
+    expect(calls.map(call => call.name)).toEqual(['list_xstocks_by_volume', 'get_xstock_market', 'quote_xstock_swap', 'create_xstock_swap', 'search_xstocks']);
   });
 
   it('tells MCP clients to preserve user-supplied mint identities', () => {
