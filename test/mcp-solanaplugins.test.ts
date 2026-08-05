@@ -25,6 +25,6 @@ describe('Solana MCP tool packages', () => {
   it('registers the bounded xStocks public data tools', () => {
     const { server, calls } = recorder();
     registerXstocksPublicPlugin(server);
-    expect(calls.map(call => call.name)).toEqual(['list_xstocks', 'get_xstock', 'list_xstocks_public_operations', 'get_xstocks_public_data']);
+    expect(calls.map(call => call.name)).toEqual(['list_xstocks', 'count_xstocks', 'get_xstocks', 'get_xstock', 'list_xstocks_public_operations', 'get_xstocks_public_data']);
   });
 });

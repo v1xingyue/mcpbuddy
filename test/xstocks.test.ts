@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { getXstock, listXstocks, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
+import { countXstocks, getXstock, listXstocks, listXstocksPage, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
 
 const nvda = { name: 'NVIDIA xStock', symbol: 'NVDAx', deployments: [{ address: 'NVDASolanaMint11111111111111111111111111111111', network: 'Solana' }, { address: '0x123', network: 'Ethereum' }] };
 const noSolana = { name: 'Other xStock', symbol: 'OTHx', deployments: [{ address: '0x456', network: 'Ethereum' }] };
@@ -21,7 +21,7 @@ describe('xStocks public API contract', () => {
 
   it('normalizes the Solana catalog without exposing deployments on other chains', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue(new Response(JSON.stringify({ nodes: [noSolana, nvda] }), { status: 200 })));
-    await expect(listXstocks()).resolves.toEqual([{ symbol: 'NVDAx', name: 'NVIDIA', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana' }]);
+    await expect(listXstocks()).resolves.toEqual([{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana' }]);
   });
 
   it('combines the documented public asset data into a Solana xStock detail', async () => {
@@ -34,7 +34,7 @@ describe('xStocks public API contract', () => {
       return Promise.resolve(new Response(JSON.stringify(data), { status: 200 }));
     }));
     await expect(getXstock('NVDAx')).resolves.toEqual({
-      symbol: 'NVDAx', name: 'NVIDIA', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana',
+      symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111', chain: 'solana',
       price: 216.38, multiplier: 1, oracle: 'pyth-feed-id', metadataUri: null,
     });
   });
@@ -49,5 +49,12 @@ describe('xStocks public API contract', () => {
       return Promise.resolve(new Response(JSON.stringify(data), { status: 200 }));
     }));
     await expect(getXstock('OTHx')).rejects.toThrow('OTHx does not have a Solana deployment.');
+  });
+
+  it('returns a lightweight cursor page and catalog count', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockImplementation(() => Promise.resolve(new Response(JSON.stringify({ nodes: [nvda] }), { status: 200 }))));
+    await expect(listXstocksPage({ limit: 50 })).resolves.toEqual({ xstocks: [{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111' }], nextCursor: null });
+    await expect(countXstocks()).resolves.toBe(1);
+    await expect(listXstocksPage({ cursor: '../bad' })).rejects.toThrow('cursor is invalid');
   });
 });

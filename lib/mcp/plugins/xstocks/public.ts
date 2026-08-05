@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { toolPluginSettings } from '@/lib/db/schema';
-import { getXstock, getXstocksPublicData, listXstocks, xstocksPublicOperationSchema, xstocksPublicOperations } from '@/lib/xstocks';
+import { countXstocks, getXstock, getXstocksPublicData, listXstocksPage, xstocksPublicOperationSchema, xstocksPublicOperations } from '@/lib/xstocks';
 import type { McpPluginContext, McpToolServer } from '@/lib/mcp/plugins/types';
 
 /** xStocks API v2 public data. No API key, wallet capability, or trade action is exposed. */
@@ -15,22 +15,52 @@ async function xstocksEnabledForUser(userId: string) {
 export function registerXstocksPublicPlugin(server: McpToolServer, context: McpPluginContext) {
   server.registerTool('list_xstocks', {
     title: 'List Solana xStocks',
-    description: 'List xStocks with verified Solana deployments. Use each returned mint with Solana wallet balance and mint-based swap tools.',
-    inputSchema: {},
-    outputSchema: { xstocks: z.array(z.object({ symbol: z.string(), name: z.string(), mint: z.string(), chain: z.literal('solana') })) },
-  }, async (_args: unknown, extra: any) => {
+    description: 'List a page of xStocks with verified Solana deployments. The default page is 50 lightweight symbol/name/mint records; pass nextCursor to continue.',
+    inputSchema: { limit: z.number().int().min(1).max(100).default(50), cursor: z.string().regex(/^\d{1,6}$/).optional() },
+    outputSchema: { xstocks: z.array(z.object({ symbol: z.string(), name: z.string(), mint: z.string() })), nextCursor: z.string().nullable() },
+  }, async (args: { limit: number; cursor?: string }, extra: any) => {
     try {
       const user = await context.currentUser(extra.authInfo?.extra?.githubId);
       if (!await xstocksEnabledForUser(user.id)) return { content: [{ type: 'text', text: 'xStocks public tools are disabled for this MCPBuddy account. Enable them in Tool list.' }], isError: true };
-      const xstocks = await listXstocks();
-      return { content: [{ type: 'text', text: JSON.stringify({ xstocks }) }], structuredContent: { xstocks } };
+      const page = await listXstocksPage(args);
+      return { content: [{ type: 'text', text: JSON.stringify(page) }], structuredContent: page };
     }
     catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not list xStocks.' }], isError: true }; }
   });
 
+  server.registerTool('count_xstocks', {
+    title: 'Count Solana xStocks',
+    description: 'Return the number of xStocks with verified Solana deployments in the shared catalog.',
+    inputSchema: {},
+    outputSchema: { count: z.number().int().nonnegative() },
+  }, async (_args: unknown, extra: any) => {
+    try {
+      const user = await context.currentUser(extra.authInfo?.extra?.githubId);
+      if (!await xstocksEnabledForUser(user.id)) return { content: [{ type: 'text', text: 'xStocks public tools are disabled for this MCPBuddy account. Enable them in Tool list.' }], isError: true };
+      const count = await countXstocks();
+      return { content: [{ type: 'text', text: JSON.stringify({ count }) }], structuredContent: { count } };
+    }
+    catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not count xStocks.' }], isError: true }; }
+  });
+
+  server.registerTool('get_xstocks', {
+    title: 'Get Solana xStocks detail',
+    description: 'Get one xStock’s verified Solana mint, USD quote, Solana multiplier, and Solana oracle identifier. This is read-only; it cannot trade or move assets.',
+    inputSchema: { symbol: z.string().trim().regex(/^[A-Za-z0-9._-]{1,32}$/) },
+    outputSchema: { symbol: z.string(), name: z.string(), mint: z.string(), chain: z.literal('solana'), price: z.number(), multiplier: z.number(), oracle: z.string().nullable(), metadataUri: z.null() },
+  }, async (args: any, extra: any) => {
+    try {
+      const user = await context.currentUser(extra.authInfo?.extra?.githubId);
+      if (!await xstocksEnabledForUser(user.id)) return { content: [{ type: 'text', text: 'xStocks public tools are disabled for this MCPBuddy account. Enable them in Tool list.' }], isError: true };
+      const xstock = await getXstock(args.symbol);
+      return { content: [{ type: 'text', text: JSON.stringify(xstock) }], structuredContent: xstock };
+    }
+    catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not retrieve xStock.' }], isError: true }; }
+  });
+
   server.registerTool('get_xstock', {
     title: 'Get Solana xStock',
-    description: 'Get one xStock’s verified Solana mint, USD quote, Solana multiplier, and Solana oracle identifier. This is read-only; it cannot trade or move assets.',
+    description: 'Deprecated compatibility alias for get_xstocks. Get one xStock’s verified Solana mint, USD quote, Solana multiplier, and Solana oracle identifier.',
     inputSchema: { symbol: z.string().trim().regex(/^[A-Za-z0-9._-]{1,32}$/) },
     outputSchema: { symbol: z.string(), name: z.string(), mint: z.string(), chain: z.literal('solana'), price: z.number(), multiplier: z.number(), oracle: z.string().nullable(), metadataUri: z.null() },
   }, async (args: any, extra: any) => {

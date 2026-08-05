@@ -51,13 +51,15 @@ xStocks API v2 through a fixed operation allowlist. It accepts only a validated
 asset symbol and bounded string query parameters; callers cannot supply a host
 or path. Responses are JSON-only and capped at 256 KB.
 
-`list_xstocks` is the normalized catalog for Solana workflows: it includes only
-assets with a verified Solana deployment and returns their symbol, display name,
-Solana mint, and `chain: "solana"`. `get_xstock` resolves one symbol to that
-same deployment plus its public USD quote, Solana multiplier, and a Solana
-oracle identifier. The public xStocks API does not provide Metaplex metadata
-URIs, so `metadataUri` is explicitly `null`; its logo URL is not misrepresented
-as on-chain metadata.
+`list_xstocks({ limit, cursor })` is the normalized catalog for Solana
+workflows. It defaults to 50 records (maximum 100) and returns only each
+asset's symbol, display name, and Solana mint plus an offset-based
+`nextCursor`. Pass that cursor to obtain the next page. `count_xstocks()`
+returns the catalog size. `get_xstocks({ symbol })` resolves one symbol to its
+Solana deployment plus a public USD quote, Solana multiplier, and Solana oracle
+identifier. `get_xstock` remains as a deprecated compatibility alias. The
+public xStocks API does not provide Metaplex metadata URIs, so `metadataUri` is
+explicitly `null`; its logo URL is not misrepresented as on-chain metadata.
 
 The Solana catalog is stored as one shared public Postgres cache record for 24
 hours. This avoids repeatedly resolving stable mint mappings while never

@@ -56,6 +56,9 @@ export type Xstock = XstocksSolanaAsset & {
   metadataUri: null;
 };
 
+export type XstocksListItem = Omit<XstocksSolanaAsset, 'chain'>;
+export type XstocksPage = { xstocks: XstocksListItem[]; nextCursor: string | null };
+
 export const xstocksPublicRequestSchema = z.object({ operation: xstocksPublicOperationSchema, symbol: symbolSchema.optional(), query: querySchema.optional().default({}) });
 export type XstocksPublicRequest = z.input<typeof xstocksPublicRequestSchema>;
 
@@ -100,7 +103,7 @@ function asAsset(value: unknown): XstocksAsset {
 
 function solanaAsset(asset: XstocksAsset): XstocksSolanaAsset | null {
   const deployment = asset.deployments.find(item => item.network === solanaNetwork);
-  return deployment ? { symbol: asset.symbol, name: asset.name.replace(/ xStock$/i, ''), mint: deployment.address, chain: 'solana' } : null;
+  return deployment ? { symbol: asset.symbol, name: asset.name, mint: deployment.address, chain: 'solana' } : null;
 }
 
 async function fetchSolanaXstocks(): Promise<XstocksSolanaAsset[]> {
@@ -155,6 +158,20 @@ export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
     if (cached) return cached.assets;
     throw error;
   }
+}
+
+/** Pages the cached Solana catalog with a bounded, offset-based cursor. */
+export async function listXstocksPage({ limit = 50, cursor }: { limit?: number; cursor?: string } = {}): Promise<XstocksPage> {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 100) throw new Error('limit must be an integer from 1 to 100.');
+  const offset = cursor === undefined ? 0 : /^[0-9]{1,6}$/.test(cursor) ? Number(cursor) : NaN;
+  if (!Number.isSafeInteger(offset)) throw new Error('cursor is invalid. Use the nextCursor returned by a previous list_xstocks call.');
+  const assets = await listXstocks();
+  const items = assets.slice(offset, offset + limit).map(({ symbol, name, mint }) => ({ symbol, name, mint }));
+  return { xstocks: items, nextCursor: offset + items.length < assets.length ? String(offset + items.length) : null };
+}
+
+export async function countXstocks(): Promise<number> {
+  return (await listXstocks()).length;
 }
 
 function oracleIdentifier(value: unknown): string | null {
