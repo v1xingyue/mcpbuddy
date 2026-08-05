@@ -12,6 +12,7 @@ import { publicHtmlBlobPath, publicHtmlSchema } from '@/lib/public-html';
 import { registerSolanaBasePlugin } from '@/lib/mcp/plugins/solana/base';
 import { registerSolanaJupiterPlugin } from '@/lib/mcp/plugins/solana/jupiter';
 import { registerHyloCorePlugin } from '@/lib/mcp/plugins/hylo/core';
+import { registerXstocksPublicPlugin } from '@/lib/mcp/plugins/xstocks/public';
 
 // MCP Apps clients resolve this resource into a sandboxed, interactive card. Clients
 // that do not implement MCP Apps still receive the text content returned by the tool.
@@ -140,6 +141,7 @@ const handler = createMcpHandler(
     registerSolanaBasePlugin(server, solanaPluginContext);
     registerSolanaJupiterPlugin(server, solanaPluginContext);
     registerHyloCorePlugin(server, solanaPluginContext);
+    registerXstocksPublicPlugin(server);
     server.tool(
       'hello',
       'Confirm this AI client is authenticated and connected to your MCPBuddy center.',

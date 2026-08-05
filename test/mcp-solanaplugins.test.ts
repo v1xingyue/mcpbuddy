@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { registerSolanaBasePlugin } from '@/lib/mcp/plugins/solana/base';
 import { registerSolanaJupiterPlugin } from '@/lib/mcp/plugins/solana/jupiter';
+import { registerXstocksPublicPlugin } from '@/lib/mcp/plugins/xstocks/public';
 
 const context = {
   currentUser: async () => ({ id: 'user-1' }), reviewUiUri: 'ui://mcpbuddy/swap-review.html', reviewUi: '<html></html>',
@@ -19,5 +20,11 @@ describe('Solana MCP tool packages', () => {
     registerSolanaJupiterPlugin(server, context);
     expect(calls.filter(call => call.name.includes('swap')).map(call => call.name)).toEqual(['solana-swap-review', 'quote_solana_swap', 'list_solana_swap_tokens', 'create_solana_swap', 'create_solana_swap_by_mint']);
     expect(calls.map(call => call.name)).toEqual(expect.arrayContaining(['get_wallet_address', 'get_solana_asset_balances', 'create_solana_sol_transfer', 'create_solana_token_transfer', 'get_solana_transaction_status', 'list_solana_swap_tokens', 'quote_solana_swap']));
+  });
+
+  it('registers the bounded xStocks public data tools', () => {
+    const { server, calls } = recorder();
+    registerXstocksPublicPlugin(server);
+    expect(calls.map(call => call.name)).toEqual(['list_xstocks_public_operations', 'get_xstocks_public_data']);
   });
 });

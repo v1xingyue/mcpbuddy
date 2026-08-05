@@ -9,6 +9,7 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
 | `hylo/core` | Solana protocol plugin for Hylo token operations through wallet-reviewed unsigned swaps | asset catalog, wallet balances, buy asset, sell asset, operation guide |
+| `xstocks/public` | Bounded xStocks API v2 public-data proxy | list API operations, assets, multiplier, price/supply, reserves, oracles, system status, corporate actions, bridges |
 
 The shared famous-token catalog lives in
 `config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
@@ -42,3 +43,19 @@ is the account-scoped wallet holding reader.
 Keep native Hylo mint, earn, leverage, and LST staking builders disabled until
 the integration is backed by Hylo's SDK or a verified API and can preserve the
 same owner-scoped, review-before-signing constraints used by Solana tools.
+
+## xStocks package
+
+`xstocks/public` exposes all sixteen unauthenticated GET operations documented in
+xStocks API v2 through a fixed operation allowlist. It accepts only a validated
+asset symbol and bounded string query parameters; callers cannot supply a host
+or path. Responses are JSON-only and capped at 256 KB.
+
+The xStocks `Client` and `Trades` API groups are intentionally not exposed from
+this shared MCP service. Those endpoints require a Backed organization API key
+and include wallet whitelisting, RFQs, issuance/redemption, and bridge
+operations. A server-wide key would violate MCPBuddy tenant isolation by
+exposing one organization's privileged data or authority to another account.
+They require a separately designed, per-account encrypted credential store,
+explicit user consent UI, account-scoped persistence, and reviewable mutation
+workflows before they can be added.
