@@ -59,6 +59,11 @@ oracle identifier. The public xStocks API does not provide Metaplex metadata
 URIs, so `metadataUri` is explicitly `null`; its logo URL is not misrepresented
 as on-chain metadata.
 
+The Solana catalog is stored as one shared public Postgres cache record for 24
+hours. This avoids repeatedly resolving stable mint mappings while never
+mixing account data. A failed refresh serves the last valid catalog; price,
+multiplier, and oracle values in `get_xstock` are still fetched live.
+
 Each account can enable or disable this public package in **Tool list**. The
 setting is persisted in `tool_plugin_settings` and enforced again in the MCP
 handler after token authentication, so disabling it is not merely a dashboard

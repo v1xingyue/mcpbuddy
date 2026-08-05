@@ -1,7 +1,12 @@
 import { z } from 'zod';
+import { eq } from 'drizzle-orm';
+import { getDb } from '@/lib/db';
+import { xstocksSolanaAssetCache } from '@/lib/db/schema';
 
 const XSTOCKS_API_ORIGIN = 'https://api.xstocks.fi/api/v2';
 const MAX_RESPONSE_BYTES = 256_000;
+const SOLANA_ASSET_CACHE_KEY = 'solana-assets-v1';
+const SOLANA_ASSET_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
 
 /** Public, unauthenticated operations from the xStocks API v2 reference. */
 export const xstocksPublicOperations = [
@@ -98,13 +103,58 @@ function solanaAsset(asset: XstocksAsset): XstocksSolanaAsset | null {
   return deployment ? { symbol: asset.symbol, name: asset.name.replace(/ xStock$/i, ''), mint: deployment.address, chain: 'solana' } : null;
 }
 
-/** Lists xStocks that have a verified Solana deployment, suitable for mint-based wallet and swap tools. */
-export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
+async function fetchSolanaXstocks(): Promise<XstocksSolanaAsset[]> {
   const result = await getXstocksPublicData({ operation: 'assets' });
   const body = asRecord(result.data);
   if (!Array.isArray(body.nodes)) throw new Error('xStocks assets response is missing nodes.');
   return body.nodes.map(asAsset).map(solanaAsset).filter((asset): asset is XstocksSolanaAsset => asset !== null)
     .sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
+function cachedSolanaXstocks(serialized: string): XstocksSolanaAsset[] {
+  const parsed: unknown = JSON.parse(serialized);
+  if (!Array.isArray(parsed)) throw new Error('Cached xStocks assets are invalid.');
+  return parsed.map(item => {
+    const asset = asRecord(item);
+    if (typeof asset.symbol !== 'string' || typeof asset.name !== 'string' || typeof asset.mint !== 'string' || asset.chain !== 'solana') throw new Error('Cached xStocks asset is invalid.');
+    return { symbol: asset.symbol, name: asset.name, mint: asset.mint, chain: 'solana' };
+  });
+}
+
+type CachedSolanaXstocks = { assets: XstocksSolanaAsset[]; fetchedAt: Date } | null;
+
+async function loadCachedSolanaXstocks(): Promise<CachedSolanaXstocks> {
+  try {
+    const [cached] = await getDb().select().from(xstocksSolanaAssetCache).where(eq(xstocksSolanaAssetCache.cacheKey, SOLANA_ASSET_CACHE_KEY)).limit(1);
+    return cached ? { assets: cachedSolanaXstocks(cached.assets), fetchedAt: cached.fetchedAt } : null;
+  } catch {
+    // The public API remains available while a new migration is being applied or storage is temporarily unavailable.
+    return null;
+  }
+}
+
+async function storeSolanaXstocks(assets: XstocksSolanaAsset[]) {
+  try {
+    const fetchedAt = new Date();
+    await getDb().insert(xstocksSolanaAssetCache).values({ cacheKey: SOLANA_ASSET_CACHE_KEY, assets: JSON.stringify(assets), fetchedAt })
+      .onConflictDoUpdate({ target: xstocksSolanaAssetCache.cacheKey, set: { assets: JSON.stringify(assets), fetchedAt } });
+  } catch {
+    // A cache write must never turn a successful public data lookup into a tool failure.
+  }
+}
+
+/** Lists xStocks that have a verified Solana deployment, with a shared 24-hour database cache for stable mint mappings. */
+export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
+  const cached = await loadCachedSolanaXstocks();
+  if (cached && Date.now() - cached.fetchedAt.getTime() < SOLANA_ASSET_CACHE_TTL_MS) return cached.assets;
+  try {
+    const assets = await fetchSolanaXstocks();
+    await storeSolanaXstocks(assets);
+    return assets;
+  } catch (error) {
+    if (cached) return cached.assets;
+    throw error;
+  }
 }
 
 function oracleIdentifier(value: unknown): string | null {

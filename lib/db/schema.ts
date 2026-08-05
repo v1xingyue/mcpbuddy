@@ -86,6 +86,13 @@ export const toolPluginSettings = pgTable('tool_plugin_settings', {
   updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
 }, (table) => [{ unique: 'tool_plugin_settings_user_plugin_unique', columns: [table.userId, table.pluginId] }]);
 
+/** Shared public xStocks Solana mint catalog. It contains no account or credential data. */
+export const xstocksSolanaAssetCache = pgTable('xstocks_solana_asset_cache', {
+  cacheKey: text('cache_key').primaryKey(),
+  assets: text('assets').notNull(),
+  fetchedAt: timestamp('fetched_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const swapTransactions = pgTable('swap_transactions', {
   id: uuid('id').defaultRandom().primaryKey(),
   userId: uuid('user_id').references(() => users.id, { onDelete: 'cascade' }).notNull(),
