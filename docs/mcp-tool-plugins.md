@@ -9,7 +9,7 @@ MCP tool packages live in `lib/mcp/plugins/<domain>/<package>.ts`. The route own
 | `solana/base` | Bound wallet, portfolio, review/signing workflow | wallet address, balances, native SOL and SPL transfers, transaction status, review card |
 | `solana/jupiter` | Read-only routing data and unsigned Jupiter swaps | token discovery, quote, symbol swap, mint swap |
 | `hylo/core` | Solana protocol plugin for Hylo token operations through wallet-reviewed unsigned swaps | asset catalog, wallet balances, buy asset, sell asset, operation guide |
-| `xstocks/public` | Bounded xStocks API v2 public-data proxy | list API operations, assets, multiplier, price/supply, reserves, oracles, system status, corporate actions, bridges |
+| `xstocks/public` | Bounded xStocks API v2 public-data proxy | normalized Solana xStock catalog/detail, list API operations, assets, multiplier, price/supply, reserves, oracles, system status, corporate actions, bridges |
 
 The shared famous-token catalog lives in
 `config/solana-famous-tokens.json`. It is consumed by both packages: Base uses
@@ -50,6 +50,14 @@ same owner-scoped, review-before-signing constraints used by Solana tools.
 xStocks API v2 through a fixed operation allowlist. It accepts only a validated
 asset symbol and bounded string query parameters; callers cannot supply a host
 or path. Responses are JSON-only and capped at 256 KB.
+
+`list_xstocks` is the normalized catalog for Solana workflows: it includes only
+assets with a verified Solana deployment and returns their symbol, display name,
+Solana mint, and `chain: "solana"`. `get_xstock` resolves one symbol to that
+same deployment plus its public USD quote, Solana multiplier, and a Solana
+oracle identifier. The public xStocks API does not provide Metaplex metadata
+URIs, so `metadataUri` is explicitly `null`; its logo URL is not misrepresented
+as on-chain metadata.
 
 Each account can enable or disable this public package in **Tool list**. The
 setting is persisted in `tool_plugin_settings` and enforced again in the MCP

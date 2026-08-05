@@ -2,7 +2,7 @@ import { z } from 'zod';
 import { eq, and } from 'drizzle-orm';
 import { getDb } from '@/lib/db';
 import { toolPluginSettings } from '@/lib/db/schema';
-import { getXstocksPublicData, xstocksPublicOperationSchema, xstocksPublicOperations } from '@/lib/xstocks';
+import { getXstock, getXstocksPublicData, listXstocks, xstocksPublicOperationSchema, xstocksPublicOperations } from '@/lib/xstocks';
 import type { McpPluginContext, McpToolServer } from '@/lib/mcp/plugins/types';
 
 /** xStocks API v2 public data. No API key, wallet capability, or trade action is exposed. */
@@ -13,6 +13,36 @@ async function xstocksEnabledForUser(userId: string) {
 }
 
 export function registerXstocksPublicPlugin(server: McpToolServer, context: McpPluginContext) {
+  server.registerTool('list_xstocks', {
+    title: 'List Solana xStocks',
+    description: 'List xStocks with verified Solana deployments. Use each returned mint with Solana wallet balance and mint-based swap tools.',
+    inputSchema: {},
+    outputSchema: { xstocks: z.array(z.object({ symbol: z.string(), name: z.string(), mint: z.string(), chain: z.literal('solana') })) },
+  }, async (_args: unknown, extra: any) => {
+    try {
+      const user = await context.currentUser(extra.authInfo?.extra?.githubId);
+      if (!await xstocksEnabledForUser(user.id)) return { content: [{ type: 'text', text: 'xStocks public tools are disabled for this MCPBuddy account. Enable them in Tool list.' }], isError: true };
+      const xstocks = await listXstocks();
+      return { content: [{ type: 'text', text: JSON.stringify({ xstocks }) }], structuredContent: { xstocks } };
+    }
+    catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not list xStocks.' }], isError: true }; }
+  });
+
+  server.registerTool('get_xstock', {
+    title: 'Get Solana xStock',
+    description: 'Get one xStock’s verified Solana mint, USD quote, Solana multiplier, and Solana oracle identifier. This is read-only; it cannot trade or move assets.',
+    inputSchema: { symbol: z.string().trim().regex(/^[A-Za-z0-9._-]{1,32}$/) },
+    outputSchema: { symbol: z.string(), name: z.string(), mint: z.string(), chain: z.literal('solana'), price: z.number(), multiplier: z.number(), oracle: z.string().nullable(), metadataUri: z.null() },
+  }, async (args: any, extra: any) => {
+    try {
+      const user = await context.currentUser(extra.authInfo?.extra?.githubId);
+      if (!await xstocksEnabledForUser(user.id)) return { content: [{ type: 'text', text: 'xStocks public tools are disabled for this MCPBuddy account. Enable them in Tool list.' }], isError: true };
+      const xstock = await getXstock(args.symbol);
+      return { content: [{ type: 'text', text: JSON.stringify(xstock) }], structuredContent: xstock };
+    }
+    catch (error) { return { content: [{ type: 'text', text: error instanceof Error ? error.message : 'Could not retrieve xStock.' }], isError: true }; }
+  });
+
   server.registerTool('list_xstocks_public_operations', {
     title: 'List xStocks public operations',
     description: 'List every unauthenticated xStocks API v2 operation available through MCPBuddy.',

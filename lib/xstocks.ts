@@ -27,9 +27,32 @@ export type XstocksPublicOperation = typeof xstocksPublicOperations[number]['id'
 export const xstocksPublicOperationSchema = z.enum(xstocksPublicOperations.map(operation => operation.id) as [XstocksPublicOperation, ...XstocksPublicOperation[]]);
 const symbolSchema = z.string().trim().regex(/^[A-Za-z0-9._-]{1,32}$/);
 const querySchema = z.record(z.string().regex(/^[a-zA-Z][a-zA-Z0-9_-]{0,39}$/), z.string().trim().min(1).max(120)).refine(query => Object.keys(query).length <= 12, 'At most 12 query parameters are allowed.');
+const solanaNetwork = 'Solana';
+
+type XstocksAsset = {
+  name: string;
+  symbol: string;
+  logo?: string;
+  deployments: Array<{ address: string; network: string }>;
+};
+
+export type XstocksSolanaAsset = {
+  symbol: string;
+  name: string;
+  mint: string;
+  chain: 'solana';
+};
+
+export type Xstock = XstocksSolanaAsset & {
+  price: number;
+  multiplier: number;
+  oracle: string | null;
+  /** xStocks public v2 publishes a logo URL, but not an on-chain metadata URI. */
+  metadataUri: null;
+};
 
 export const xstocksPublicRequestSchema = z.object({ operation: xstocksPublicOperationSchema, symbol: symbolSchema.optional(), query: querySchema.optional().default({}) });
-export type XstocksPublicRequest = z.infer<typeof xstocksPublicRequestSchema>;
+export type XstocksPublicRequest = z.input<typeof xstocksPublicRequestSchema>;
 
 function operationFor(id: XstocksPublicOperation) {
   return xstocksPublicOperations.find(operation => operation.id === id)!;
@@ -52,4 +75,63 @@ export async function getXstocksPublicData(request: XstocksPublicRequest) {
   if (body.length > MAX_RESPONSE_BYTES) throw new Error('xStocks response is too large to return safely. Narrow query parameters and try again.');
   try { return { operation: parsed.operation, data: JSON.parse(body) as unknown, fetchedAt: new Date().toISOString() }; }
   catch { throw new Error('xStocks public API returned an invalid JSON response.'); }
+}
+
+function asRecord(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('xStocks public API returned an unexpected response.');
+  return value as Record<string, unknown>;
+}
+
+function asAsset(value: unknown): XstocksAsset {
+  const asset = asRecord(value);
+  if (typeof asset.name !== 'string' || typeof asset.symbol !== 'string' || !Array.isArray(asset.deployments)) throw new Error('xStocks asset response is missing required fields.');
+  const deployments = asset.deployments.map(deployment => {
+    const parsed = asRecord(deployment);
+    if (typeof parsed.address !== 'string' || typeof parsed.network !== 'string') throw new Error('xStocks asset deployment response is missing required fields.');
+    return { address: parsed.address, network: parsed.network };
+  });
+  return { name: asset.name, symbol: asset.symbol, ...(typeof asset.logo === 'string' ? { logo: asset.logo } : {}), deployments };
+}
+
+function solanaAsset(asset: XstocksAsset): XstocksSolanaAsset | null {
+  const deployment = asset.deployments.find(item => item.network === solanaNetwork);
+  return deployment ? { symbol: asset.symbol, name: asset.name.replace(/ xStock$/i, ''), mint: deployment.address, chain: 'solana' } : null;
+}
+
+/** Lists xStocks that have a verified Solana deployment, suitable for mint-based wallet and swap tools. */
+export async function listXstocks(): Promise<XstocksSolanaAsset[]> {
+  const result = await getXstocksPublicData({ operation: 'assets' });
+  const body = asRecord(result.data);
+  if (!Array.isArray(body.nodes)) throw new Error('xStocks assets response is missing nodes.');
+  return body.nodes.map(asAsset).map(solanaAsset).filter((asset): asset is XstocksSolanaAsset => asset !== null)
+    .sort((a, b) => a.symbol.localeCompare(b.symbol));
+}
+
+function oracleIdentifier(value: unknown): string | null {
+  const body = asRecord(value);
+  if (!Array.isArray(body.nodes)) throw new Error('xStocks oracle response is missing nodes.');
+  const solanaOracle = body.nodes.map(asRecord).find(item => item.network === solanaNetwork);
+  if (!solanaOracle) return null;
+  if (typeof solanaOracle.address === 'string' && solanaOracle.address) return solanaOracle.address;
+  const metadata = asRecord(solanaOracle.metadata);
+  for (const key of ['hermesId', 'feedId', 'verifierContract']) if (typeof metadata[key] === 'string' && metadata[key]) return metadata[key] as string;
+  return null;
+}
+
+/** Returns a Solana xStock with its public USD quote, multiplier, and Solana oracle identifier. */
+export async function getXstock(symbol: string): Promise<Xstock> {
+  const parsedSymbol = symbolSchema.parse(symbol);
+  const [assetResult, priceResult, multiplierResult, oracleResult] = await Promise.all([
+    getXstocksPublicData({ operation: 'asset', symbol: parsedSymbol }),
+    getXstocksPublicData({ operation: 'asset_price_data', symbol: parsedSymbol }),
+    getXstocksPublicData({ operation: 'asset_multiplier', symbol: parsedSymbol, query: { network: solanaNetwork } }),
+    getXstocksPublicData({ operation: 'asset_oracle', symbol: parsedSymbol }),
+  ]);
+  const asset = solanaAsset(asAsset(assetResult.data));
+  if (!asset) throw new Error(`${parsedSymbol} does not have a Solana deployment.`);
+  const price = asRecord(priceResult.data).quote;
+  const multiplier = asRecord(multiplierResult.data).currentMultiplier;
+  if (typeof price !== 'number' || !Number.isFinite(price)) throw new Error('xStocks price response is missing quote.');
+  if (typeof multiplier !== 'number' || !Number.isFinite(multiplier)) throw new Error('xStocks multiplier response is missing currentMultiplier.');
+  return { ...asset, price, multiplier, oracle: oracleIdentifier(oracleResult.data), metadataUri: null };
 }

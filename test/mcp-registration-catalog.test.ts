@@ -11,7 +11,7 @@ describe('MCP registration catalog', () => {
     });
     expect(names).toEqual(expect.arrayContaining([
       'hello', 'user_info', 'publish_page', 'publish_html',
-      'list_xstocks_public_operations', 'get_xstocks_public_data',
+      'list_xstocks', 'get_xstock', 'list_xstocks_public_operations', 'get_xstocks_public_data',
     ]));
   });
 });
