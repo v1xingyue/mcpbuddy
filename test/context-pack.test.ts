@@ -6,6 +6,8 @@ describe('AI Context Pack', () => {
     expect(CONTEXT_PACK_TEMPLATE).toContain('## Profile');
     expect(CONTEXT_PACK_TEMPLATE).toContain('## Hard limits');
     expect(CONTEXT_PACK_TEMPLATE).toContain('## Tool guidance');
+    expect(CONTEXT_PACK_TEMPLATE).toContain('create_solana_swap_by_mint');
+    expect(CONTEXT_PACK_TEMPLATE).toContain('Never infer, replace, or select a mint');
   });
 
   it('preserves saved Markdown and returns a useful empty-state response', () => {

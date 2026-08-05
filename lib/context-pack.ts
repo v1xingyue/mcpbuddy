@@ -24,6 +24,10 @@ export const CONTEXT_PACK_TEMPLATE = `# AI Context Pack
 - Constraints:
 
 ## Tool guidance
+### Solana swaps
+- When the user supplies input and output mint addresses, use \`create_solana_swap_by_mint\` and treat them as the only asset identities. Never infer, replace, or select a mint from a token name or symbol.
+- Convert the input amount to its exact atomic integer using the input mint's decimals before calling the tool.
+
 ### publish_page
 - Confirm before publishing publicly.
 

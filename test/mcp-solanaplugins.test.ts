@@ -9,8 +9,8 @@ const context = {
 };
 
 function recorder() {
-  const calls: Array<{ kind: string; name: string }> = [];
-  return { calls, server: { tool: (name: string) => calls.push({ kind: 'tool', name }), registerTool: (name: string) => calls.push({ kind: 'registerTool', name }), registerResource: (name: string) => calls.push({ kind: 'resource', name }) } };
+  const calls: Array<{ kind: string; name: string; definition?: { description?: string } }> = [];
+  return { calls, server: { tool: (name: string) => calls.push({ kind: 'tool', name }), registerTool: (name: string, definition: { description?: string }) => calls.push({ kind: 'registerTool', name, definition }), registerResource: (name: string) => calls.push({ kind: 'resource', name }) } };
 }
 
 describe('Solana MCP tool packages', () => {
@@ -26,5 +26,13 @@ describe('Solana MCP tool packages', () => {
     const { server, calls } = recorder();
     registerXstocksPublicPlugin(server, context);
     expect(calls.map(call => call.name)).toEqual(['list_xstocks_by_volume', 'get_xstock_market', 'quote_xstock_swap', 'create_xstock_swap', 'list_xstocks', 'count_xstocks', 'get_xstocks', 'get_xstock', 'list_xstocks_public_operations', 'get_xstocks_public_data']);
+  });
+
+  it('tells MCP clients to preserve user-supplied mint identities', () => {
+    const { server, calls } = recorder();
+    registerSolanaJupiterPlugin(server, context);
+    const mintSwap = calls.find(call => call.name === 'create_solana_swap_by_mint');
+    expect(mintSwap?.definition?.description).toContain('never infer, replace, or select a mint from a token name or symbol');
+    expect(mintSwap?.definition?.description).toContain('atomic integer');
   });
 });
