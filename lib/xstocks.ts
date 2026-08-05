@@ -7,6 +7,8 @@ const XSTOCKS_API_ORIGIN = 'https://api.xstocks.fi/api/v2';
 const MAX_RESPONSE_BYTES = 256_000;
 const SOLANA_ASSET_CACHE_KEY = 'solana-assets-v1';
 const SOLANA_ASSET_CACHE_TTL_MS = 24 * 60 * 60 * 1_000;
+const DEXSCREENER_SOLANA_TOKENS_ORIGIN = 'https://api.dexscreener.com/tokens/v1/solana';
+const DEXSCREENER_BATCH_SIZE = 30;
 
 /** Public, unauthenticated operations from the xStocks API v2 reference. */
 export const xstocksPublicOperations = [
@@ -58,6 +60,7 @@ export type Xstock = XstocksSolanaAsset & {
 
 export type XstocksListItem = Omit<XstocksSolanaAsset, 'chain'>;
 export type XstocksPage = { xstocks: XstocksListItem[]; nextCursor: string | null };
+export type XstockMarket = XstocksSolanaAsset & { price: number; volume24hUsd: number | null; volumeSource: 'dexscreener'; fetchedAt: string };
 
 export const xstocksPublicRequestSchema = z.object({ operation: xstocksPublicOperationSchema, symbol: symbolSchema.optional(), query: querySchema.optional().default({}) });
 export type XstocksPublicRequest = z.input<typeof xstocksPublicRequestSchema>;
@@ -174,6 +177,51 @@ export async function countXstocks(): Promise<number> {
   return (await listXstocks()).length;
 }
 
+/** Resolves a symbol against the verified Solana xStocks catalog, never a caller-provided mint. */
+export async function findSolanaXstock(symbol: string) {
+  const parsedSymbol = symbolSchema.parse(symbol);
+  const asset = (await listXstocks()).find(item => item.symbol.toUpperCase() === parsedSymbol.toUpperCase());
+  if (!asset) throw new Error(`${parsedSymbol} is not a verified Solana xStock.`);
+  return asset;
+}
+
+type DexScreenerPair = { chainId?: unknown; baseToken?: { address?: unknown }; quoteToken?: { address?: unknown }; volume?: { h24?: unknown } };
+
+function marketVolumesByMint(pairs: unknown, mints: Set<string>) {
+  const volumes = new Map<string, number>();
+  if (!Array.isArray(pairs)) return volumes;
+  for (const pair of pairs as DexScreenerPair[]) {
+    if (pair.chainId !== 'solana') continue;
+    const volume = pair.volume?.h24;
+    if (typeof volume !== 'number' || !Number.isFinite(volume) || volume < 0) continue;
+    for (const token of [pair.baseToken, pair.quoteToken]) if (token && typeof token.address === 'string' && mints.has(token.address)) volumes.set(token.address, (volumes.get(token.address) ?? 0) + volume);
+  }
+  return volumes;
+}
+
+/** Fetches public DEX 24-hour USD volume for verified xStock mints. Missing pair data stays null rather than being presented as zero volume. */
+export async function xstockVolumes24h(assets: XstocksSolanaAsset[]) {
+  const mints = new Set(assets.map(asset => asset.mint));
+  const chunks = Array.from(mints).reduce<string[][]>((all, mint, index) => { const bucket = Math.floor(index / DEXSCREENER_BATCH_SIZE); (all[bucket] ??= []).push(mint); return all; }, []);
+  const responses = await Promise.all(chunks.map(async chunk => {
+    const response = await fetch(`${DEXSCREENER_SOLANA_TOKENS_ORIGIN}/${chunk.join(',')}`, { headers: { accept: 'application/json' }, next: { revalidate: 30 } });
+    if (!response.ok) throw new Error(`DEX market data request failed (${response.status}).`);
+    return response.json() as Promise<unknown>;
+  }));
+  const volumes = new Map<string, number>();
+  for (const body of responses) for (const [mint, volume] of marketVolumesByMint(body, mints)) volumes.set(mint, (volumes.get(mint) ?? 0) + volume);
+  return volumes;
+}
+
+/** Lists verified Solana xStocks ranked by public DEX 24-hour USD volume. */
+export async function listXstocksByVolume(limit = 10) {
+  if (!Number.isInteger(limit) || limit < 1 || limit > 25) throw new Error('limit must be an integer from 1 to 25.');
+  const assets = await listXstocks();
+  const volumes = await xstockVolumes24h(assets);
+  return assets.map(asset => ({ ...asset, volume24hUsd: volumes.get(asset.mint) ?? null, volumeSource: 'dexscreener' as const }))
+    .filter(asset => asset.volume24hUsd !== null).sort((a, b) => b.volume24hUsd! - a.volume24hUsd!).slice(0, limit);
+}
+
 function oracleIdentifier(value: unknown): string | null {
   const body = asRecord(value);
   if (!Array.isArray(body.nodes)) throw new Error('xStocks oracle response is missing nodes.');
@@ -201,4 +249,11 @@ export async function getXstock(symbol: string): Promise<Xstock> {
   if (typeof price !== 'number' || !Number.isFinite(price)) throw new Error('xStocks price response is missing quote.');
   if (typeof multiplier !== 'number' || !Number.isFinite(multiplier)) throw new Error('xStocks multiplier response is missing currentMultiplier.');
   return { ...asset, price, multiplier, oracle: oracleIdentifier(oracleResult.data), metadataUri: null };
+}
+
+/** Returns the official xStocks price together with public Solana DEX 24-hour trading volume. */
+export async function getXstockMarket(symbol: string): Promise<XstockMarket> {
+  const xstock = await getXstock(symbol);
+  const volumes = await xstockVolumes24h([xstock]);
+  return { symbol: xstock.symbol, name: xstock.name, mint: xstock.mint, chain: 'solana', price: xstock.price, volume24hUsd: volumes.get(xstock.mint) ?? null, volumeSource: 'dexscreener', fetchedAt: new Date().toISOString() };
 }

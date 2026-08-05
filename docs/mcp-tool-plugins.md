@@ -66,6 +66,21 @@ hours. This avoids repeatedly resolving stable mint mappings while never
 mixing account data. A failed refresh serves the last valid catalog; price,
 multiplier, and oracle values in `get_xstock` are still fetched live.
 
+For trading-oriented requests, `list_xstocks_by_volume({ limit })` ranks the
+verified Solana catalog by public DexScreener 24-hour USD pair volume and
+`get_xstock_market({ symbol })` combines the official xStocks USD price with
+that volume. A `null` volume means DexScreener returned no indexed matching
+pair; it is not presented as zero volume.
+
+`quote_xstock_swap({ side, symbol, amount, slippageBps })` validates `symbol`
+against the verified catalog and asks Jupiter for a read-only USDC/xStock
+route. `create_xstock_swap` repeats that validation and creates only the same
+account-owned unsigned review record used by all Solana swaps. `buy` amounts
+are USDC inputs; `sell` amounts are xStock-token units. It deliberately does
+not accept “sell $100 worth” as an exact execution instruction: market price
+and route output can move, so the caller must quote and choose an exact token
+quantity before creating the wallet-reviewed transaction.
+
 Each account can enable or disable this public package in **Tool list**. The
 setting is persisted in `tool_plugin_settings` and enforced again in the MCP
 handler after token authentication, so disabling it is not merely a dashboard

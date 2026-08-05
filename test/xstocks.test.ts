@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { countXstocks, getXstock, listXstocks, listXstocksPage, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
+import { countXstocks, getXstock, getXstockMarket, listXstocks, listXstocksByVolume, listXstocksPage, xstocksPublicOperations, xstocksPublicRequestSchema } from '@/lib/xstocks';
 
 const nvda = { name: 'NVIDIA xStock', symbol: 'NVDAx', deployments: [{ address: 'NVDASolanaMint11111111111111111111111111111111', network: 'Solana' }, { address: '0x123', network: 'Ethereum' }] };
 const noSolana = { name: 'Other xStock', symbol: 'OTHx', deployments: [{ address: '0x456', network: 'Ethereum' }] };
@@ -56,5 +56,25 @@ describe('xStocks public API contract', () => {
     await expect(listXstocksPage({ limit: 50 })).resolves.toEqual({ xstocks: [{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: 'NVDASolanaMint11111111111111111111111111111111' }], nextCursor: null });
     await expect(countXstocks()).resolves.toBe(1);
     await expect(listXstocksPage({ cursor: '../bad' })).rejects.toThrow('cursor is invalid');
+  });
+
+  it('ranks only verified Solana xStocks by public 24-hour DEX volume', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+      const url = new URL(input.toString());
+      if (url.hostname === 'api.dexscreener.com') return Promise.resolve(new Response(JSON.stringify([{ chainId: 'solana', baseToken: { address: nvda.deployments[0].address }, volume: { h24: 1234.56 } }, { chainId: 'solana', baseToken: { address: 'unverified' }, volume: { h24: 999999 } }]), { status: 200 }));
+      return Promise.resolve(new Response(JSON.stringify({ nodes: [nvda] }), { status: 200 }));
+    }));
+    await expect(listXstocksByVolume()).resolves.toEqual([{ symbol: 'NVDAx', name: 'NVIDIA xStock', mint: nvda.deployments[0].address, chain: 'solana', volume24hUsd: 1234.56, volumeSource: 'dexscreener' }]);
+  });
+
+  it('keeps an unindexed 24-hour volume explicitly unavailable', async () => {
+    vi.stubGlobal('fetch', vi.fn((input: string | URL) => {
+      const url = new URL(input.toString());
+      if (url.hostname === 'api.dexscreener.com') return Promise.resolve(new Response(JSON.stringify([]), { status: 200 }));
+      const path = url.pathname;
+      const data = path.endsWith('/price-data') ? { quote: 216.38 } : path.endsWith('/multiplier') ? { currentMultiplier: 1 } : path.endsWith('/oracles/NVDAx') ? { nodes: [] } : nvda;
+      return Promise.resolve(new Response(JSON.stringify(data), { status: 200 }));
+    }));
+    await expect(getXstockMarket('NVDAx')).resolves.toMatchObject({ symbol: 'NVDAx', price: 216.38, volume24hUsd: null, volumeSource: 'dexscreener' });
   });
 });

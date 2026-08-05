@@ -74,7 +74,7 @@ export function mergeWhitelistedSwapTokens(whitelist: WhitelistedSwapToken[]): S
 async function swapTokensForUser(userId: string): Promise<SwapToken[]> {
   const whitelist = await getDb().select({ mint: walletTokenWatchlist.mint, symbol: walletTokenWatchlist.symbol, name: walletTokenWatchlist.name }).from(walletTokenWatchlist).where(eq(walletTokenWatchlist.userId, userId));
   const hydrated = await Promise.all(whitelist.map(async item => {
-    const metadata = await jupiterToken(item.mint);
+    const metadata = await solanaTokenMetadata(item.mint);
     return metadata?.decimals === undefined ? null : { ...item, decimals: metadata.decimals };
   }));
   return mergeWhitelistedSwapTokens(hydrated.filter((item): item is WhitelistedSwapToken => Boolean(item)));
@@ -113,12 +113,28 @@ export function toAtomicAmount(value: string, decimals: number) {
   return atomic.toString();
 }
 function fromAtomicAmount(value: string, decimals: number) { const padded = value.padStart(decimals + 1, '0'); const fraction = padded.slice(-decimals).replace(/0+$/, ''); return fraction ? `${padded.slice(0, -decimals)}.${fraction}` : padded.slice(0, -decimals); }
-async function jupiterToken(mint: string) {
+export async function solanaTokenMetadata(mint: string) {
   type Token = { id: string; symbol?: string; name?: string; decimals?: number };
   const response = await fetch(`https://api.jup.ag/tokens/v2/search?query=${encodeURIComponent(mint)}`, { headers: headers(), cache: 'no-store' });
   if (!response.ok) return null;
   const tokens = await response.json() as Token[];
   return tokens.find(token => token.id === mint) ?? null;
+}
+
+/** Quotes a bounded caller-supplied mint pair. Callers must validate mint ownership/allowlisting before using this path. */
+export async function quoteSolanaSwapByMint(args: { inputMint: string; outputMint: string; inputToken: string; outputToken: string; inputDecimals: number; outputDecimals: number; amount: string; slippageBps: number }) {
+  let inputMint: PublicKey; let outputMint: PublicKey;
+  try { inputMint = new PublicKey(args.inputMint); outputMint = new PublicKey(args.outputMint); } catch { throw new Error('inputMint and outputMint must be valid Solana mint addresses.'); }
+  if (inputMint.equals(outputMint)) throw new Error('Choose two different token mints.');
+  if (!Number.isInteger(args.inputDecimals) || args.inputDecimals < 0 || args.inputDecimals > 18 || !Number.isInteger(args.outputDecimals) || args.outputDecimals < 0 || args.outputDecimals > 18) throw new Error('Token decimals are invalid.');
+  if (!Number.isInteger(args.slippageBps) || args.slippageBps < 1 || args.slippageBps > 1_000) throw new Error('slippageBps must be an integer from 1 to 1000.');
+  const amount = toAtomicAmount(args.amount, args.inputDecimals);
+  const query = new URLSearchParams({ inputMint: inputMint.toBase58(), outputMint: outputMint.toBase58(), amount, slippageBps: String(args.slippageBps) });
+  const response = await fetch(`${JUPITER}/quote?${query}`, { headers: headers(), cache: 'no-store' });
+  if (!response.ok) throw new Error(`Jupiter quote failed (${response.status}).`);
+  const quote = await response.json() as JupiterQuote;
+  if (!/^\d+$/.test(quote.inAmount) || !/^\d+$/.test(quote.outAmount) || !/^\d+$/.test(quote.otherAmountThreshold)) throw new Error('Jupiter quote returned invalid token amounts.');
+  return { inputToken: args.inputToken, outputToken: args.outputToken, inputAmount: args.amount, inputAmountAtomic: quote.inAmount, expectedOutput: fromAtomicAmount(quote.outAmount, args.outputDecimals), expectedOutputAtomic: quote.outAmount, minimumOutput: fromAtomicAmount(quote.otherAmountThreshold, args.outputDecimals), minimumOutputAtomic: quote.otherAmountThreshold, slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], quotedAt: new Date().toISOString() };
 }
 
 async function rpc<T>(method: string, params: unknown[]) {
@@ -235,7 +251,7 @@ export async function createSwapByMintForUser(userId: string, args: { inputMint:
   if (!buildResponse.ok) { const detail = (await buildResponse.text()).slice(0, 2_000); throw new Error(`Jupiter transaction build failed (${buildResponse.status}).${detail ? ` Response: ${detail}` : ''}`); }
   const built = await buildResponse.json() as JupiterSwapBuild; if (built.simulationError) { const detail = typeof built.simulationError === 'string' ? built.simulationError : `${built.simulationError.errorCode ?? 'SIMULATION_ERROR'}: ${built.simulationError.error ?? 'Unknown simulation error.'}`; throw new Error(`Jupiter built a transaction that failed simulation: ${detail}`); } if (!built.swapTransaction) throw new Error('Jupiter did not return a transaction to sign.');
   const details = inspect(built.swapTransaction); if (details.feePayer !== wallet.address || !details.requiredSigners.includes(wallet.address)) throw new Error('Rejected a transaction whose required fee payer does not match the bound wallet.');
-  const [inputToken, outputToken] = await Promise.all([jupiterToken(inputMint.toBase58()), jupiterToken(outputMint.toBase58())]);
+  const [inputToken, outputToken] = await Promise.all([solanaTokenMetadata(inputMint.toBase58()), solanaTokenMetadata(outputMint.toBase58())]);
   const short = (mint: string) => `${mint.slice(0, 5)}…${mint.slice(-4)}`;
   const inputDecimals = inputToken?.decimals; const outputDecimals = outputToken?.decimals;
   const summary: SigningSummary = { kind: 'swap', inputToken: inputToken?.symbol ?? short(inputMint.toBase58()), outputToken: outputToken?.symbol ?? short(outputMint.toBase58()), inputMint: quote.inputMint, outputMint: quote.outputMint, inputAmount: inputDecimals === undefined ? args.amount : fromAtomicAmount(quote.inAmount, inputDecimals), inputAmountAtomic: quote.inAmount, expectedOutputAtomic: quote.outAmount, minimumOutputAtomic: quote.otherAmountThreshold, ...(outputDecimals === undefined ? {} : { expectedOutput: fromAtomicAmount(quote.outAmount, outputDecimals), minimumOutput: fromAtomicAmount(quote.otherAmountThreshold, outputDecimals) }), slippageBps: args.slippageBps, priceImpactPct: quote.priceImpactPct ?? null, route: [...new Set((quote.routePlan ?? []).map(item => item.swapInfo?.label).filter((label): label is string => Boolean(label)))], ...details };
